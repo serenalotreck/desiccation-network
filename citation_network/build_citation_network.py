@@ -28,15 +28,18 @@ def classify_orgs(ents, defs):
     """
     kings = []
     for i in ents:
-        t1 = taxoniq.Taxon(i)
-        lineage = [t.scientific_name for t in t1.ranked_lineage]
-        if lineage[-1] == 'Bacteria' or lineage[-1] == 'Archea':
-            kings.append(defs[lineage[-1]])
-        elif lineage[-1] == 'Eukaryota':
-            try:
-                kings.append(defs[lineage[-2]])
-            except KeyError:
-                continue
+        try:
+            t1 = taxoniq.Taxon(i)
+            lineage = [t.scientific_name for t in t1.ranked_lineage]
+            if lineage[-1] == 'Bacteria' or lineage[-1] == 'Archea':
+                kings.append(defs[lineage[-1]])
+            elif lineage[-1] == 'Eukaryota':
+                try:
+                    kings.append(defs[lineage[-2]])
+                except KeyError:
+                    continue
+        except KeyError:
+            continue
 
     kings = list(set(kings))
     return kings
@@ -163,9 +166,12 @@ def classify_nodes(papers, taxonerd, out_loc, out_prefix):
         else:
             try:
                 # Save the taxonomic classification
-                paper_kings[paper.doi] = king
-                # Save kept papers
-                keep_papers.append(paper)
+                if isinstance(paper.doi, str):
+                    paper_kings[paper.doi] = king
+                    # Save kept papers
+                    keep_papers.append(paper)
+                else:
+                    dropped_papers.append(paper)
             except AttributeError:
                 # Drop if it doesn't have a DOI
                 dropped_papers.append(paper)
