@@ -1,15 +1,11 @@
 """
-Build a traditional directed citation network.
+Classifies nodes ina citation network by study organism.
 
 Author: Serena G. Lotreck
 """
 import argparse
 from os.path import abspath
-from tethne.readers import wos
 from tqdm import tqdm
-from tethne.classes.corpus import Corpus
-from tethne.networks.papers import direct_citation
-from tethne.writers.graph import to_graphml
 from taxonerd import TaxoNERD
 import taxoniq
 import pickle
