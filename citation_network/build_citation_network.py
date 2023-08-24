@@ -12,6 +12,7 @@ from tethne.networks.papers import direct_citation
 from tethne.writers.graph import to_graphml
 from taxonerd import TaxoNERD
 import taxoniq
+import pickle
 
 
 def classify_orgs(ents, defs):
@@ -178,8 +179,10 @@ def classify_nodes(papers, taxonerd, out_loc, out_prefix):
 
     # Make and save new corpus of dropped papers
     drop_corpus = Corpus(dropped_papers)
-    drop_save = f'{out_loc}/{out_prefix}_classification_dropped_documents.hdf5'
-    _ = drop_corpus.to_hdf5(datapath=drop_save)
+    drop_save = f'{out_loc}/{out_prefix}_classification_dropped_documents.pickle'
+    with open(drop_save, 'w') as myf:
+        pickle.dump(drop_corpus, myf)
+    #_ = drop_corpus.to_hdf5(datapath=drop_save)
     verboseprint('Papers that could not be classified by study organism have '
                 f'been saved to {drop_save}. {len(dropped_papers)} were dropped.')
 
@@ -191,8 +194,10 @@ def classify_nodes(papers, taxonerd, out_loc, out_prefix):
     # Make new corpus with kept papers and add taxonomic class as feature
     keep_corpus = Corpus(keep_papers, index_by='doi')
     keep_corpus.add_features('kingdom_class', paper_kings)
-    keep_save = f'{out_loc}/{out_prefix}_classification_kept_documents.hdf5'
-    _ = keep_corpus.to_hdf5(datapath=keep_save)
+    keep_save = f'{out_loc}/{out_prefix}_classification_kept_documents.pickle'
+    with open(keep_save, 'w') as myf:
+        pickle.dump(keep_corpus, myf)
+    #_ = keep_corpus.to_hdf5(datapath=keep_save)
     verboseprint('Papers with successfull study organism classification have '
             f'been saved to {keep_save}. {len(keep_papers)} were kept.')
     return keep_corpus

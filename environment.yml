@@ -1,0 +1,13 @@
+name: graphs
+channels:
+  - defaults
+dependencies:
+  - networkx
+  - python=3.10
+  - jsonlines
+  - ipykernel
+  - matplotlib
+  - scipy
+  - pandas
+  - requests
+prefix: /mnt/home/lotrecks/anaconda3/envs/graphs
