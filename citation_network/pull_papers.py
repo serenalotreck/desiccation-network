@@ -16,6 +16,7 @@ import requests
 from tqdm import tqdm
 from collections import defaultdict
 import sys
+from math import ceil
 
 sys.path.append('../data/')
 from semantic_scholar_API_key import API_KEY
@@ -39,7 +40,16 @@ def main(search_term, out_path, saved_jsonl, intermediate_path):
         search_results = []
         for offset in tqdm(range(0, 10000, 100)):
             query = f'http://api.semanticscholar.org/graph/v1/paper/search?query=desiccation+tolerance&offset={offset}&limit=99&fields=title,abstract,references'
-            search = requests.get(query, headers=header).json()
+            succeeded = False
+            reps = 0
+            while not succeeded:
+                search = requests.get(query, headers=header).json()
+                try:
+                    search['data']
+                    succeeded = True
+                except KeyError:
+                    reps += 1
+                    print(f'{reps} failed requests for offset number {offset}, repeating')
             search_results.append(search)
         if intermediate_path != '':
             init_result_path = f'{intermediate_path}_initial_results.jsonl'
@@ -53,29 +63,47 @@ def main(search_term, out_path, saved_jsonl, intermediate_path):
 
     # Get abstracts for references
     print('\nMaking reference abstract search query...')
+    unique_ref_ids = list(set([r['paperId'] for p in search_results for r in
+            p['references']]))
     ref_dict = {}
-    for paper in tqdm(search_results):
-        for ref in paper['references']:
-            query = f'http://api.semanticscholar.org/graph/v1/paper/{ref["paperId"]}?fields=title,abstract'
-            search = requests.get(query, headers=header).json()
-            ref_dict[paper["paperId"]] = search
-    print(f'There are {len(ref_dict)} references in this dataset.')
+    top_num = int(ceil(len(unique_ref_ids) / 500.0)) * 500
+    lost_refs = 0
+    for i in tqdm(range(0, top_num, 500)):
+        ids = unique_ref_ids[i: i+500]
+        result = requests.post(
+                'https://api.semanticscholar.org/graph/v1/paper/batch',
+                 params={'fields': 'title,abstract'},
+                 json={'ids': ids}
+                ).json()
+        for r in result:
+            try:
+                ref_dict[r['paperId']] = r
+            except TypeError:
+                lost_refs += 1
+    print(f'There are {len(unique_ref_ids)} unique references in this dataset. '
+            f'{lost_refs} references were lost due to query failure.')
     if intermediate_path != '':
         ref_path = f'{intermediate_path}_reference_abstracts.json'
         with open(ref_path, 'w') as myf:
-            json.dump(myf, ref_dict)
+            json.dump(ref_dict, myf)
         print(f'Saved reference abstracts to {ref_path}')
 
     # Combine into one output dict
     print('\nCombining all results...')
-    for initial_paper in tqdm(search_results['data']):
-        for ref_paper in initial_paper['references']:
-            ref_paper['abstract'] = ref_dict[ref_paper['paperId']]
+    lost_refs = 0
+    for i, initial_paper in tqdm(enumerate(search_results)):
+        for j, ref_paper in enumerate(initial_paper['references']):
+            try:
+                search_results[i]['references'][j] = ref_dict[ref_paper['paperId']]
+            except KeyError:
+                lost_refs += 1
+    print(f'{lost_refs} additional references were lost due to missing paperId. '
+            'These are mis-formatted citations that result in erroneous references.')
 
     # Save
     print('\nSaving results...')
     with open(out_path, 'w') as myf:
-        jsonl.dump(myf, search_results)
+        json.dump(search_results, myf)
     print(f'Saved output as {out_path}')
 
     print('\nDone!')
@@ -97,7 +125,7 @@ if __name__ == "__main__":
                         'have not been combined or had abstracts pulled for '
                         'references. Can be used to start process at '
                         'intermediate stage')
-    parser.add_argument('-intermediate_path', type=str,
+    parser.add_argument('-intermediate_path', type=str, default='',
                         help='Path with file name but no extension. If passed,'
                         'save intermediate results with this path.')
 
