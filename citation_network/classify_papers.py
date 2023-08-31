@@ -9,7 +9,9 @@ import json
 from tqdm import tqdm
 from taxonerd import TaxoNERD
 import taxoniq
-
+from collections import Counter
+import networkx as nx
+import time
 
 def classify_orgs(ents, defs):
     """
@@ -35,6 +37,8 @@ def classify_orgs(ents, defs):
                     kings.append(defs[lineage[-2]])
                 except KeyError:
                     continue
+                except IndexError:
+                    continue
         except KeyError:
             continue
 
@@ -45,7 +49,7 @@ def classify_orgs(ents, defs):
 def classify_paper(title, abstract, taxonerd):
     """
     Gets the Kingdom classification of a paper title.
-    
+
     parameters:
         title, str: title of the paper
         abstract, str: abstract of the paper
@@ -54,14 +58,20 @@ def classify_paper(title, abstract, taxonerd):
     returns:
         king, str: kindgom of the paper
     """
+    # Combine title and abstract
+    if abstract is not None:
+        text = title + ' ' + abstract
+    else:
+        text = title
+
     # Do TaxoNERD classification
-    title_df = taxonerd.find_in_text(title)
+    ent_df = taxonerd.find_in_text(text)
 
     # Get the unique organisms
-    title_ents = list(
+    ents = list(
         set([
-            title_df['entity'][j][0][0].split("NCBI:")[1]
-            for j in range(len(title_df))
+            ent_df['entity'][j][0][0].split("NCBI:")[1]
+            for j in range(len(ent_df))
         ]))
 
     # Set up definitions for kingdom classification
@@ -73,62 +83,44 @@ def classify_paper(title, abstract, taxonerd):
     }
 
     # Classify unique organisms
-    title_classes = classify_orgs(title_ents, defs)
-
-    # If abstract isn't None, also classify abstract
-    if abstract is not None:
-        abstract_df = taxonerd.find_in_text(abstract)
-        abstract_ents = list(
-            set([
-                abstract_df['entity'][j][0][0].split("NCBI:")[1]
-                for j in range(len(abstract_df))
-            ]))
-        abstract_classes = classify_orgs(abstract_ents, defs)
-    else:
-        abstract_classes = []
+    classes = classify_orgs(ents, defs)
 
     # Get the kingdom
-    if (len(title_classes) == len(abstract_classes) ==
-            1) and (title_classes == abstract_classes):
-        king = title_classes[0]
-    elif len(title_classes) == 0 and len(abstract_classes) == 1:
-        king = abstract_classes[0]
-    elif len(abstract_classes) == 0 and len(title_classes) == 1:
-        king = title_classes[0]
+    if len(classes) == 1:
+        # If no disagreement, return
+        king = classes[0]
+    elif len(classes) > 1:
+        # If disagreement, return the most common class
+        # If there's a tie, this method will resort to the class that was
+        # inserted first in the Counter object
+        king = Counter(classes).most_common(1)[0][0]
     else:
-        # For now, come back to this
+        # If there's no classification, return NOCLASS
         king = 'NOCLASS'
     return king
 
 
-def generate_links_with_classification(search_results, taxonerd):
+def generate_links_without_classification(search_results):
     """
     Generate a list of edges by paper ID from the results of a Semantic Scholar query. Removes malformed
-    citations with no paperID, and classifies nodes by the organisms in their titles.
-    
+    citations with no paperID.
+
     parameters:
         search_results, dict: query results
-        taxonerd, TaxoNERD instance: model to use for classification
-        
+
     returns:
         nodes, list of two-tuple: the paper ID and an attribute dictionary containing the paper's title
         edges, list of three-tuple: the paper IDs of both citing and cited paper, and an attribute dictionary with the paper's title
     """
-
-    # Classify nodes and identify edges
     nodes, edges = [], []
     i = 0
     for paper in tqdm(search_results):
-        org = classify_paper(paper['title'], paper['abstract'], taxonerd)
         citing = (paper['paperId'], {
-            'title': paper['title'],
-            'study_system': org
+            'title': paper['title']
         })
         cited = [(p['paperId'], {
             'title':
-            p['title'],
-            'study_system':
-            classify_paper(p['title'], p['abstract'], taxonerd)
+            p['title']
         }) for p in paper['references'] if p['paperId'] is not None]
         nodes.append(citing)
         nodes.extend(cited)
@@ -138,7 +130,76 @@ def generate_links_with_classification(search_results, taxonerd):
     return nodes, edges
 
 
-def main(search_result_path, graph_save_path, prefer_gpu):
+def generate_links_with_classification(search_results, taxonerd):
+    """
+    Generate a list of edges by paper ID from the results of a Semantic Scholar query. Removes malformed
+    citations with no paperID, and classifies nodes by the organisms in their titles.
+
+    parameters:
+        search_results, dict: query results
+        taxonerd, TaxoNERD instance: model to use for classification
+
+    returns:
+        nodes, list of two-tuple: the paper ID and an attribute dictionary containing the paper's title
+        edges, list of three-tuple: the paper IDs of both citing and cited paper, and an attribute dictionary with the paper's title
+    """
+    # Make dict of unique papers for classification
+    to_classify = {}
+    for paper in search_results:
+        if (paper['paperId'] not in to_classify.keys()) and (paper['paperId']
+                is not None):
+            to_classify[paper['paperId']] = {
+                    'title': paper['title'],
+                    'abstract': paper['abstract']
+                    }
+        for ref in paper['references']:
+            if (ref['paperId'] not in to_classify.keys()) and (ref['paperId']
+                is not None):
+                try:
+                    to_classify[ref['paperId']] = {
+                            'title': ref['title'],
+                            'abstract': ref['abstract']
+                            }
+                except KeyError:
+                    to_classify[ref['paperId']] = {
+                            'title': ref['title'],
+                            'abstract': None
+                            }
+
+    print(f'There are {len(to_classify)} unique papers to classify.')
+
+    # Classify unique papers
+    classified = {}
+    start = time.time()
+    for paperId, data in tqdm(to_classify.items()):
+        organism = classify_paper(data['title'], data['abstract'], taxonerd)
+        classified[paperId] = organism
+    print(f'Time to get entities from all papers: {time.time() - start}')
+
+    # Map the classifications back to original data structure
+    nodes, edges = [], []
+    i = 0
+    for paper in tqdm(search_results):
+        org = classified[paper['paperId']]
+        citing = (paper['paperId'], {
+            'title': paper['title'],
+            'study_system': org
+        })
+        cited = [(p['paperId'], {
+            'title':
+            p['title'],
+            'study_system':
+            classified[p['paperId']]
+        }) for p in paper['references'] if p['paperId'] is not None]
+        nodes.append(citing)
+        nodes.extend(cited)
+        edges.extend([(citing[0], p[0], num)
+                      for num, p in enumerate(cited, i)])
+        i += len(cited)
+    return nodes, edges
+
+
+def main(search_result_path, graph_save_path, prefer_gpu, skip_classification):
 
     # Read in search results
     print('\nLoading citation data...')
@@ -146,15 +207,20 @@ def main(search_result_path, graph_save_path, prefer_gpu):
         search_results = json.load(myf)
 
     # Define TaxoNERD model for classification
-    print('\nLoading TaxoNERD model...')
-    taxonerd = TaxoNERD(prefer_gpu=prefer_gpu)
-    nlp = taxonerd.load(model="en_core_eco_biobert",
-                        linker="ncbi_taxonomy",
-                        threshold=0.7)
+    if not skip_classification:
+        print('\nLoading TaxoNERD model...')
+        taxonerd = TaxoNERD(prefer_gpu=prefer_gpu)
+        nlp = taxonerd.load(model="en_core_eco_biobert",
+                            linker="ncbi_taxonomy",
+                            threshold=0.7)
+        print(f'NLP pipe names: {nlp.pipe_names}')
 
     # Get graph nodes and edges
     print('\nFormatting and classifying nodes and edges...')
-    nodes, edges = generate_links_with_classification(search_results, taxonerd)
+    if skip_classification:
+        nodes, edges = generate_links_without_classification(search_results)
+    else:
+        nodes, edges = generate_links_with_classification(search_results, taxonerd)
 
     # Build graph
     print('\nBuilding graph...')
@@ -183,10 +249,14 @@ if __name__ == '__main__':
                         help='Path to save graph, extension is .graphml')
     parser.add_argument('--prefer_gpu', action='store_true',
                         help='Whether or not GPU is available to use')
+    parser.add_argument('--skip_classification', action='store_true',
+                        help='Build the graph without node classification')
+
 
     args = parser.parse_args()
 
     args.search_result_path = abspath(args.search_result_path)
     args.graph_save_path = abspath(args.graph_save_path)
 
-    main(args.search_result_path, args.graph_save_path, args.prefer_gpu)
+    main(args.search_result_path, args.graph_save_path, args.prefer_gpu,
+            args.skip_classification)
