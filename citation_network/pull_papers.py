@@ -26,7 +26,7 @@ import json
 import jsonlines
 
 
-def main(search_term, out_path, saved_jsonl, intermediate_path):
+def main(search_term, out_path, total_results, batch_size, saved_jsonl, intermediate_path):
 
     # Make initial search
     print('\nMaking initial search query...')
@@ -38,8 +38,8 @@ def main(search_term, out_path, saved_jsonl, intermediate_path):
         print(f'Read in initial search results form {saved_jsonl}')
     else:
         search_results = []
-        for offset in tqdm(range(0, 10000, 100)):
-            query = f'http://api.semanticscholar.org/graph/v1/paper/search?query=desiccation+tolerance&offset={offset}&limit=99&fields=title,abstract,references'
+        for offset in tqdm(range(0, total_results, batch_size)):
+            query = f'http://api.semanticscholar.org/graph/v1/paper/search?query=desiccation+tolerance&offset={offset}&limit={batch_size-1}&fields=title,abstract,references'
             succeeded = False
             reps = 0
             while not succeeded:
@@ -66,14 +66,26 @@ def main(search_term, out_path, saved_jsonl, intermediate_path):
     unique_ref_ids = list(set([r['paperId'] for p in search_results for r in
             p['references']]))
     ref_dict = {}
-    top_num = int(ceil(len(unique_ref_ids) / 500.0)) * 500
     lost_refs = 0
-    for i in tqdm(range(0, top_num, 500)):
-        ids = unique_ref_ids[i: i+500]
+    if len(unique_ref_ids) > 500:
+        top_num = int(ceil(len(unique_ref_ids) / 500.0)) * 500
+        for i in tqdm(range(0, top_num, 500)):
+            ids = unique_ref_ids[i: i+500]
+            result = requests.post(
+                    'https://api.semanticscholar.org/graph/v1/paper/batch',
+                     params={'fields': 'title,abstract'},
+                     json={'ids': ids}
+                    ).json()
+            for r in result:
+                try:
+                    ref_dict[r['paperId']] = r
+                except TypeError:
+                    lost_refs += 1
+    else:
         result = requests.post(
                 'https://api.semanticscholar.org/graph/v1/paper/batch',
                  params={'fields': 'title,abstract'},
-                 json={'ids': ids}
+                 json={'ids': unique_ref_ids}
                 ).json()
         for r in result:
             try:
@@ -120,6 +132,10 @@ if __name__ == "__main__":
                         type=str,
                         help='File name with full path to save output. '
                         'Extension is .json')
+    parser.add_argument('-total_results', type=int, default=10000,
+                        help='Number of search results to get')
+    parser.add_argument('-batch_size', type=int, default=100,
+                        help='Chunk size in which to retrieve docs, must be > 1')
     parser.add_argument('-saved_jsonl', type=str, default='',
                         help='Path to a jsonl of saved search results that '
                         'have not been combined or had abstracts pulled for '
@@ -137,5 +153,5 @@ if __name__ == "__main__":
     if args.intermediate_path != '':
         args.intermediate_path = abspath(args.intermediate_path)
 
-    main(args.search_term, args.out_path, args.saved_jsonl,
-            args.intermediate_path)
+    main(args.search_term, args.out_path, args.total_results, args.batch_size,
+            args.saved_jsonl, args.intermediate_path)
