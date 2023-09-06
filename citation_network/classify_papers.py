@@ -8,47 +8,94 @@ from os.path import abspath
 import json
 from tqdm import tqdm
 from taxonerd import TaxoNERD
+from taxonerd.linking.linking import EntityLinker
 import taxoniq
 from collections import Counter
 import networkx as nx
 import time
 
-def classify_orgs(ents, defs):
+def map_paper_species(paper_spec_names, species_dict):
+    """
+    Get the kingdom classifications for each paper.
+
+    parameters:
+        paper_spec_names, dict: keys are paper ID's, values are lists of species
+        species_dict, dict: keys are species names, values are kingdoms
+
+    returns:
+        classified, dict: keys are paper ID's, values are kingdoms
+    """
+    # Map species classifications 
+    classified = {}
+    for paperId, spec_names in paper_spec_names.items():
+        uniq_spec = list(set(spec_names))
+        classes = []
+        for spec in uniq_spec:
+            classes.append(species_dict[spec])
+        if len(classes) == 1:
+            # If no disagreement, return
+            king = classes[0]
+        elif len(classes) > 1:
+            # If disagreement, return the most common class
+            # If there's a tie, this method will resort to the class that was
+            # inserted first in the Counter object
+            king = Counter(classes).most_common(1)[0][0]
+        else:
+            # If there's no classification, return NOCLASS
+            king = 'NOCLASS'
+        classified[paperId] = king
+
+    return classified
+
+    
+def get_species_classes(paper_spec_names):
     """
     Get organism classifications from a list of NCBI Taxonomy IDs
 
     parameters:
-        ents, list of int: NCBI Taxonomy ID's
-        defs, dict: keys are lineage categories, values are the final
-            kingdom classification for those categories
+        paper_spec_names, dict: keys are paperId's, values are lists of
+            species names for the paper
 
     returns:
-        kings, list of str: unique kingdom classifications
+        species_dict, keys are species names, values are kingdom
+            classifications
     """
-    kings = []
-    for i in ents:
-        try:
-            t1 = taxoniq.Taxon(i)
-            lineage = [t.scientific_name for t in t1.ranked_lineage]
-            if lineage[-1] == 'Bacteria' or lineage[-1] == 'Archea':
-                kings.append(defs[lineage[-1]])
-            elif lineage[-1] == 'Eukaryota':
-                try:
-                    kings.append(defs[lineage[-2]])
-                except KeyError:
-                    continue
-                except IndexError:
-                    continue
-        except KeyError:
-            continue
+    # Get unique species names
+    uniq_names = list(set([s for p, ss in paper_spec_names.items() for s in ss]))
 
-    kings = list(set(kings))
-    return kings
+    ## TODO finish implementing
+    # Original code here:
+    # Set up definitions for kingdom classification
+    # defs = {
+    #     'Metazoa': 'Animal',
+    #     'Viridiplantae': 'Plant',  # Consider adding algae
+    #     'Bacteria': 'Microbe',
+    #     'Archea': 'Microbe'
+    # }
+    # kings = []
+    # for i in ents:
+    #     try:
+    #         t1 = taxoniq.Taxon(i)
+    #         lineage = [t.scientific_name for t in t1.ranked_lineage]
+    #         if lineage[-1] == 'Bacteria' or lineage[-1] == 'Archea':
+    #             kings.append(defs[lineage[-1]])
+    #         elif lineage[-1] == 'Eukaryota':
+    #             try:
+    #                 kings.append(defs[lineage[-2]])
+    #             except KeyError:
+    #                 continue
+    #             except IndexError:
+    #                 continue
+    #     except KeyError:
+    #         continue
+
+    # kings = list(set(kings))
+    # return kings
 
 
-def classify_paper(title, abstract, taxonerd):
+def get_species_names(title, abstract, taxonerd):
     """
-    Gets the Kingdom classification of a paper title.
+    Gets the species names for a paper.
 
     parameters:
         title, str: title of the paper
@@ -56,7 +103,7 @@ def classify_paper(title, abstract, taxonerd):
         taxonerd, TaxoNERD instance: model to use for classification
 
     returns:
-        king, str: kindgom of the paper
+        species, list of str: species names in the paper
     """
     # Combine title and abstract
     if abstract is not None:
@@ -68,36 +115,12 @@ def classify_paper(title, abstract, taxonerd):
     ent_df = taxonerd.find_in_text(text)
 
     # Get the unique organisms
-    ents = list(
-        set([
-            ent_df['entity'][j][0][0].split("NCBI:")[1]
-            for j in range(len(ent_df))
-        ]))
+    try:
+        species = list(set(ent_df['text']))
+    except KeyError:
+        species = []
 
-    # Set up definitions for kingdom classification
-    defs = {
-        'Metazoa': 'Animal',
-        'Viridiplantae': 'Plant',  # Consider adding algae
-        'Bacteria': 'Microbe',
-        'Archea': 'Microbe'
-    }
-
-    # Classify unique organisms
-    classes = classify_orgs(ents, defs)
-
-    # Get the kingdom
-    if len(classes) == 1:
-        # If no disagreement, return
-        king = classes[0]
-    elif len(classes) > 1:
-        # If disagreement, return the most common class
-        # If there's a tie, this method will resort to the class that was
-        # inserted first in the Counter object
-        king = Counter(classes).most_common(1)[0][0]
-    else:
-        # If there's no classification, return NOCLASS
-        king = 'NOCLASS'
-    return king
+    return species
 
 
 def generate_links_without_classification(search_results):
@@ -168,13 +191,19 @@ def generate_links_with_classification(search_results, taxonerd):
 
     print(f'There are {len(to_classify)} unique papers to classify.')
 
-    # Classify unique papers
-    classified = {}
+    # Identify entites
+    paper_spec_names = {}
     start = time.time()
     for paperId, data in tqdm(to_classify.items()):
-        organism = classify_paper(data['title'], data['abstract'], taxonerd)
-        classified[paperId] = organism
+        species_names = get_species_names(data['title'], data['abstract'], taxonerd)
+        paper_spec_names[paperId] = species_names
     print(f'Time to get entities from all papers: {time.time() - start}')
+
+    # Map entities to classifications
+    start = time.time()
+    species_dict = get_species_classes(paper_spec_names)
+    classified = map_paper_species(paper_spec_names, species_dict)
+    print(f'Time to get the classification of entities from all papers: {time.time() - start}')
 
     # Map the classifications back to original data structure
     nodes, edges = [], []
@@ -211,7 +240,6 @@ def main(search_result_path, graph_save_path, prefer_gpu, skip_classification):
         print('\nLoading TaxoNERD model...')
         taxonerd = TaxoNERD(prefer_gpu=prefer_gpu)
         nlp = taxonerd.load(model="en_core_eco_biobert",
-                            linker="ncbi_taxonomy",
                             threshold=0.7)
         print(f'NLP pipe names: {nlp.pipe_names}')
 
