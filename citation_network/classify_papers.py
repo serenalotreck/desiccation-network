@@ -10,6 +10,7 @@ from tqdm import tqdm
 from taxonerd import TaxoNERD
 from taxonerd.linking.linking import EntityLinker
 import taxoniq
+from spacy.tokens import Span
 from collections import Counter
 import networkx as nx
 import time
@@ -27,11 +28,16 @@ def map_paper_species(paper_spec_names, species_dict):
     """
     # Map species classifications 
     classified = {}
+    species_missed = []
     for paperId, spec_names in paper_spec_names.items():
         uniq_spec = list(set(spec_names))
         classes = []
         for spec in uniq_spec:
-            classes.append(species_dict[spec])
+            try:
+                classes.append(species_dict[spec])
+            except:
+                species_missed.append(spec)
+                continue
         if len(classes) == 1:
             # If no disagreement, return
             king = classes[0]
@@ -45,52 +51,87 @@ def map_paper_species(paper_spec_names, species_dict):
             king = 'NOCLASS'
         classified[paperId] = king
 
+    print(f'{len(set(species_missed))} species names were not identifiable in the classification dict')
     return classified
 
     
-def get_species_classes(paper_spec_names):
+def get_species_classes(paper_spec_names, nlp, linker):
     """
     Get organism classifications from a list of NCBI Taxonomy IDs
 
     parameters:
         paper_spec_names, dict: keys are paperId's, values are lists of
             species names for the paper
+        nlp, spacy NLP object: model to use to make doc for linking
+        linker, taxonerd EntityLinker instance: linker to use to get IDs
 
     returns:
         species_dict, keys are species names, values are kingdom
             classifications
     """
     # Get unique species names
-    uniq_names = list(set([s for p, ss in paper_spec_names.items() for s in ss]))
+    all_names = [s for p, ss in paper_spec_names.items() for s in ss]
+    print(f'There were {len(all_names)} non-unique entities identified.')
+    uniq_names = list(set(all_names))
+    print(f'There are {len(uniq_names)} unique species names to classify.')
 
-    ## TODO finish implementing
-    # Original code here:
-    # Set up definitions for kingdom classification
-    # defs = {
-    #     'Metazoa': 'Animal',
-    #     'Viridiplantae': 'Plant',  # Consider adding algae
-    #     'Bacteria': 'Microbe',
-    #     'Archea': 'Microbe'
-    # }
-    # kings = []
-    # for i in ents:
-    #     try:
-    #         t1 = taxoniq.Taxon(i)
-    #         lineage = [t.scientific_name for t in t1.ranked_lineage]
-    #         if lineage[-1] == 'Bacteria' or lineage[-1] == 'Archea':
-    #             kings.append(defs[lineage[-1]])
-    #         elif lineage[-1] == 'Eukaryota':
-    #             try:
-    #                 kings.append(defs[lineage[-2]])
-    #             except KeyError:
-    #                 continue
-    #             except IndexError:
-    #                 continue
-    #     except KeyError:
-    #         continue
+    # Make into a doc with entities
+    print('Formatting unique entities into one document...')
+    doc = nlp(' '.join(uniq_names))
+    span_idxs = []
+    for i, ent in enumerate(uniq_names):
+        if i == 0:
+            start = 0
+        else:
+            start = len(' '.join(uniq_names[:i]).split(' '))
+        end = start + len(ent.split(' '))
+        span_idxs.append((start, end))
+    spans = [Span(doc, e[0], e[1], "ENTITY") for e in span_idxs]
+    doc.set_ents(spans)
+    
+    # Perform linking
+    print('Performing entity linking...')
+    start = time.time()
+    doc = linker(doc)
+    print(f'Time to apply linker: {time.time() - start: .2f}')
+    species_ids = {}
+    print(f'There are {len(doc.ents)} remaining species names after linking.')
+    for ent in doc.ents:
+        ent_id = ent._.kb_ents[0][0].split(':')[1]
+        species_ids[ent.text] = ent_id
+    
+    # Map to kingdoms
+    print('Mapping to kingdom classifications...')
+    species_dict = {}
+    defs = {
+        'Metazoa': 'Animal',
+        'Viridiplantae': 'Plant',  # Consider adding algae
+        'Bacteria': 'Microbe',
+        'Archea': 'Microbe'
+    }
+    lost_species = 0
+    for spec_ent, ncbi_id in tqdm(species_ids.items()):
+        try:
+            t1 = taxoniq.Taxon(ncbi_id)
+            lineage = [t.scientific_name for t in t1.ranked_lineage]
+            if lineage[-1] == 'Bacteria' or lineage[-1] == 'Archea':
+                king = defs[lineage[-1]]
+            elif lineage[-1] == 'Eukaryota':
+                try:
+                    king = defs[lineage[-2]]
+                except KeyError:
+                    lost_species += 1
+                    continue
+                except IndexError:
+                    lost_species += 1
+                    continue
+        except KeyError:
+            lost_species += 1
+            continue
+        species_dict[spec_ent] = king
+    print(f'{lost_species} unique species names were lost during kingdom identification.')
 
-    # kings = list(set(kings))
-    # return kings
+    return species_dict
 
 
 def get_species_names(title, abstract, taxonerd):
@@ -153,7 +194,7 @@ def generate_links_without_classification(search_results):
     return nodes, edges
 
 
-def generate_links_with_classification(search_results, taxonerd):
+def generate_links_with_classification(search_results, taxonerd, nlp, linker):
     """
     Generate a list of edges by paper ID from the results of a Semantic Scholar query. Removes malformed
     citations with no paperID, and classifies nodes by the organisms in their titles.
@@ -161,6 +202,8 @@ def generate_links_with_classification(search_results, taxonerd):
     parameters:
         search_results, dict: query results
         taxonerd, TaxoNERD instance: model to use for classification
+        nlp, spacy NLP object: model to use to make doc for linking
+        linker, taxonerd EntityLinker instance: linker to use to get IDs
 
     returns:
         nodes, list of two-tuple: the paper ID and an attribute dictionary containing the paper's title
@@ -197,13 +240,13 @@ def generate_links_with_classification(search_results, taxonerd):
     for paperId, data in tqdm(to_classify.items()):
         species_names = get_species_names(data['title'], data['abstract'], taxonerd)
         paper_spec_names[paperId] = species_names
-    print(f'Time to get entities from all papers: {time.time() - start}')
+    print(f'Time to get entities from all papers: {time.time() - start: .2f}')
 
     # Map entities to classifications
     start = time.time()
-    species_dict = get_species_classes(paper_spec_names)
+    species_dict = get_species_classes(paper_spec_names, nlp, linker)
     classified = map_paper_species(paper_spec_names, species_dict)
-    print(f'Time to get the classification of entities from all papers: {time.time() - start}')
+    print(f'Time to get the classification of entities from all papers: {time.time() - start: .2f}')
 
     # Map the classifications back to original data structure
     nodes, edges = [], []
@@ -238,17 +281,21 @@ def main(search_result_path, graph_save_path, prefer_gpu, skip_classification):
     # Define TaxoNERD model for classification
     if not skip_classification:
         print('\nLoading TaxoNERD model...')
+        start = time.time()
         taxonerd = TaxoNERD(prefer_gpu=prefer_gpu)
-        nlp = taxonerd.load(model="en_core_eco_biobert",
-                            threshold=0.7)
-        print(f'NLP pipe names: {nlp.pipe_names}')
+        nlp = taxonerd.load(model="en_core_eco_biobert")
+        print(f'Time to load model: {time.time() - start: .2f}')
+        print('\nLoading entity linker...')
+        start = time.time()
+        linker = EntityLinker(linker_name='ncbi_taxonomy', resolve_abbreviations=False)
+        print(f'Time to load linker: {time.time() - start: .2f}')
 
     # Get graph nodes and edges
     print('\nFormatting and classifying nodes and edges...')
     if skip_classification:
         nodes, edges = generate_links_without_classification(search_results)
     else:
-        nodes, edges = generate_links_with_classification(search_results, taxonerd)
+        nodes, edges = generate_links_with_classification(search_results, taxonerd, nlp, linker)
 
     # Build graph
     print('\nBuilding graph...')
