@@ -4,3 +4,4 @@ job_scripts
 .ipynb_checkpoints
 data.zip
 data/semantic_scholar_API_key.py
+__pycache__

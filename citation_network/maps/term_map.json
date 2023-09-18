@@ -1,3 +1,18 @@
-{"vegetative": "Plant",
-  "seeds" : "Plant",
-  "plants": "Plant"}
+{
+	"vegetative": "Plant",
+	"seeds": "Plant",
+	"plants": "Plant",
+	"Barley": "Plant",
+	"Cassava": "Plant",
+	"Corn": "Plant",
+	"Maize": "Plant",
+	"Oats": "Plant",
+	"Potato": "Plant",
+	"Sorghum": "Plant",
+	"Soybean": "Plant",
+	"Wheat": "Plant",
+	"Tardigrade": "Animal",
+	"Nematode": "Animal",
+	"Bacterial": "Microbe",
+	"Archeal": "Microbe"
+}

@@ -28,15 +28,19 @@ import jsonlines
 
 def main(search_term, out_path, total_results, batch_size, saved_jsonl, intermediate_path):
 
-    # Make initial search
-    print('\nMaking initial search query...')
+    # If provided, read in intermediate results
     if saved_jsonl != '':
+        print('\nReading in provided search results...')
         with jsonlines.open(saved_jsonl) as reader:
             search_results = []
             for obj in reader:
                 search_results.append(obj)
         print(f'Read in initial search results form {saved_jsonl}')
+    
+    
+    # Make initial search
     else:
+        print('\nMaking initial search query...')
         search_results = []
         for offset in tqdm(range(0, total_results, batch_size)):
             query = f'http://api.semanticscholar.org/graph/v1/paper/search?query=desiccation+tolerance&offset={offset}&limit={batch_size-1}&fields=title,abstract,references'
@@ -51,11 +55,16 @@ def main(search_term, out_path, total_results, batch_size, saved_jsonl, intermed
                     reps += 1
                     print(f'{reps} failed requests for offset number {offset}, repeating')
             search_results.append(search)
+
+        # Save if requested
         if intermediate_path != '':
+            print('\nsaving intermediate results...')
             init_result_path = f'{intermediate_path}_initial_results.jsonl'
             with jsonlines.open(init_result_path, 'w') as writer:
                 writer.write_all(search_results)
             print(f'Saved initial search results to {init_result_path}')
+
+    # Combine into one set of search results
     search_results = [p for search in search_results for p in search['data']]
     print(
         f'There are {len(search_results)} papers in the initial search results.'
@@ -94,7 +103,10 @@ def main(search_term, out_path, total_results, batch_size, saved_jsonl, intermed
                 lost_refs += 1
     print(f'There are {len(unique_ref_ids)} unique references in this dataset. '
             f'{lost_refs} references were lost due to query failure.')
+    
+    # Save references if requested
     if intermediate_path != '':
+        print('\nSaving intermediate references...')
         ref_path = f'{intermediate_path}_reference_abstracts.json'
         with open(ref_path, 'w') as myf:
             json.dump(ref_dict, myf)
@@ -113,9 +125,9 @@ def main(search_term, out_path, total_results, batch_size, saved_jsonl, intermed
             'These are mis-formatted citations that result in erroneous references.')
 
     # Save
-    print('\nSaving results...')
-    with open(out_path, 'w') as myf:
-        json.dump(search_results, myf)
+    print('\nSaving final results...')
+    with jsonlines.open(out_path, 'w') as writer:
+        writer.write_all(search_results)
     print(f'Saved output as {out_path}')
 
     print('\nDone!')
@@ -131,7 +143,7 @@ if __name__ == "__main__":
     parser.add_argument('out_path',
                         type=str,
                         help='File name with full path to save output. '
-                        'Extension is .json')
+                        'Extension is .jsonl')
     parser.add_argument('-total_results', type=int, default=10000,
                         help='Number of search results to get')
     parser.add_argument('-batch_size', type=int, default=100,

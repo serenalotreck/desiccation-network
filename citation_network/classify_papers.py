@@ -51,11 +51,103 @@ def fuzzy_match_kingdoms(paper_dict, generic_dict):
             classes.append(king)
 
     return classes
-
-
-def map_taxoniq(uniq_names, doc, species_ids):
+ 
+   
+def map_paper_species(paper_spec_names, species_dict, generic_dict, to_classify):
     """
-    Use taxoniq directly to attempt to map species names not linked by
+    Get the kingdom classifications for each paper.
+
+    parameters:
+        paper_spec_names, dict: keys are paper ID's, values are lists of species
+        species_dict, dict: keys are species names, values are kingdoms
+        generic_dict, dict: keys are generic descriptors of a kingdom, values
+            are kingdom names
+        to_classify, dict: keys are paper IDs, values are dict with title and
+            abstract
+
+    returns:
+        classified, dict: keys are paper ID's, values are kingdoms
+    """
+    # Map species classifications
+    classified = {}
+    species_missed = []
+    additional_papers_identified = 0
+    for paperId, spec_names in tqdm(paper_spec_names.items()):
+        classes = []
+        # Try either generic terms 
+        if (len(spec_names) == 0) and (generic_dict != ''):
+            classes = fuzzy_match_kingdoms(to_classify[paperId], generic_dict)
+            if len(classes) != 0:
+                additional_papers_identified += 1
+        for spec in spec_names:
+            try:
+                classes.append(species_dict[spec])
+            except:
+                species_missed.append(spec)
+                continue
+        if len(classes) == 1:
+            # If no disagreement, return
+            king = classes[0]
+        elif len(classes) > 1:
+            # If disagreement, return the most common class
+            # If there's a tie, this method will resort to the class that was
+            # inserted first in the Counter object
+            king = Counter(classes).most_common(1)[0][0]
+        else:
+            # If there's no classification, return NOCLASS
+            king = 'NOCLASS'
+            print(f'\nSpec names for paper without classification: {spec_names}')
+        classified[paperId] = king
+
+    return classified
+
+
+def map_specs_to_kings(species_ids):
+    """
+    Maps species names to kingdom classifications.
+    
+    parameters:
+        species_ids, dict: keys are species names, values are NCBI IDs
+    
+    returns:
+        species_dict, dict: keys are species names, values are kingdoms
+    """
+    species_dict = {}
+    defs = {
+        'Metazoa': 'Animal',
+        'Viridiplantae': 'Plant',  # Consider adding algae
+        'Bacteria': 'Microbe',
+        'Archea': 'Microbe',
+        'Fungi': 'Fungi'
+    }
+    for spec_ent, ncbi_id in tqdm(species_ids.items()):
+        try:
+            t1 = taxoniq.Taxon(ncbi_id)
+            lineage = [t.scientific_name for t in t1.ranked_lineage]
+            if lineage[-1] == 'Bacteria' or lineage[-1] == 'Archea':
+                king = defs[lineage[-1]]
+            elif lineage[-1] == 'Eukaryota':
+                try:
+                    king = defs[lineage[-2]]
+                    if king == 'Opisthokonta':
+                        king = defs[lineage[-3]]
+                except KeyError:
+                    not_tracked_lineage += 1
+                    continue
+                except IndexError:
+                    no_sub_eukaryota_lineage_identified += 1
+                    continue
+        except KeyError:
+            not_found_in_taxonomy += 1
+            continue
+        species_dict[spec_ent] = king
+
+    return species_dict
+
+
+def link_taxoniq(uniq_names, doc, species_ids):
+    """
+    Use taxoniq directly to attempt to link species names not linked by
     TaxoNERD.
 
     parameters:
@@ -81,61 +173,32 @@ def map_taxoniq(uniq_names, doc, species_ids):
     return species_ids
 
 
-def map_paper_species(paper_spec_names, species_dict, generic_dict, to_classify):
+def make_ent_doc(uniq_names, nlp):
     """
-    Get the kingdom classifications for each paper.
-
+    Make entities into dummy doc for linking.
+    
     parameters:
-        paper_spec_names, dict: keys are paper ID's, values are lists of species
-        species_dict, dict: keys are species names, values are kingdoms
-        generic_dict, dict: keys are generic descriptors of a kingdom, values
-            are kingdom names
-        to_classify, dict: keys are paper IDs, values are dict with title and
-            abstract
-
+        uniq_names, list of str: unique entities to link
+        nlp, spacy NLP object: model to use to build doc
+    
     returns:
-        classified, dict: keys are paper ID's, values are kingdoms
+        doc, spacy Doc object: doc with entities set as doc.ents
     """
-    # Map species classifications
-    classified = {}
-    species_missed = []
-    additional_papers_identified = 0
-    for paperId, spec_names in paper_spec_names.items():
-        uniq_spec = list(set(spec_names))
-        classes = []
-        # Try either generic terms 
-        if (len(uniq_spec) == 0) and (generic_dict != ''):
-            classes = fuzzy_match_kingdoms(to_classify[paperId], generic_dict)
-            if len(classes) != 0:
-                additional_papers_identified += 1
-        for spec in uniq_spec:
-            try:
-                classes.append(species_dict[spec])
-            except:
-                species_missed.append(spec)
-                continue
-        if len(classes) == 1:
-            # If no disagreement, return
-            king = classes[0]
-        elif len(classes) > 1:
-            # If disagreement, return the most common class
-            # If there's a tie, this method will resort to the class that was
-            # inserted first in the Counter object
-            king = Counter(classes).most_common(1)[0][0]
+    doc = nlp(' '.join(uniq_names))
+    span_idxs = []
+    for i, ent in enumerate(uniq_names):
+        if i == 0:
+            start = 0
         else:
-            # If there's no classification, return NOCLASS
-            king = 'NOCLASS'
-        classified[paperId] = king
-
-    print(
-        f'{len(set(species_missed))} species names were not identifiable in the classification dict'
-    )
-    if generic_dict != '':
-        print(f'An additional {additional_papers_identified} papers were identified '
-            'because of the generic fuzy match approach')
-
-    return classified
-
+            start = len(' '.join(uniq_names[:i]).split(' '))
+        end = start + len(ent.split(' '))
+        span_idxs.append((start, end))
+    spans = [Span(doc, e[0], e[1], "ENTITY") for e in span_idxs]
+    doc.set_ents(spans)
+    print(f'Number of entities in dummy doc: {len(doc.ents)}')
+    
+    return doc
+    
 
 def get_species_classes(paper_spec_names, nlp, linker):
     """
@@ -159,83 +222,25 @@ def get_species_classes(paper_spec_names, nlp, linker):
 
     # Make into a doc with entities
     print('Formatting unique entities into one document...')
-    doc = nlp(' '.join(uniq_names))
-    span_idxs = []
-    for i, ent in enumerate(uniq_names):
-        if i == 0:
-            start = 0
-        else:
-            start = len(' '.join(uniq_names[:i]).split(' '))
-        end = start + len(ent.split(' '))
-        span_idxs.append((start, end))
-    spans = [Span(doc, e[0], e[1], "ENTITY") for e in span_idxs]
-    doc.set_ents(spans)
-    print(f'Number of entities in dummy doc: {len(doc.ents)}')
+    doc = make_ent_doc(uniq_names, nlp)
 
     # Perform linking
-    print('Performing entity linking...')
+    print('Performing TaxoNERD entity linking...')
     start = time.time()
     doc = linker(doc)
     print(f'Time to apply linker: {time.time() - start: .2f}')
     species_ids = {}
-    print(f'There are {len(doc.ents)} remaining species names after linking.')
     for ent in doc.ents:
         ent_id = ent._.kb_ents[0][0].split(':')[1]
         species_ids[ent.text] = ent_id
-    print(f'Using taxoniq to attempt to map the missed entities...')
-    species_ids = map_taxoniq(uniq_names, doc, species_ids)
+
+    # Use taxoniq to try and fill in some unlinked species
+    print(f'Using taxoniq to attempt to link the missed entities...')
+    species_ids = link_taxoniq(uniq_names, doc, species_ids)
 
     # Map to kingdoms
     print('Mapping to kingdom classifications...')
-    species_dict = {}
-    defs = {
-        'Metazoa': 'Animal',
-        'Viridiplantae': 'Plant',  # Consider adding algae
-        'Bacteria': 'Microbe',
-        'Archea': 'Microbe'
-    }
-    not_tracked_lineage, no_sub_eukaryota_lineage_identified, not_found_in_taxonomy = 0, 0, 0
-    for spec_ent, ncbi_id in tqdm(species_ids.items()):
-        try:
-            t1 = taxoniq.Taxon(ncbi_id)
-            lineage = [t.scientific_name for t in t1.ranked_lineage]
-            if lineage[-1] == 'Bacteria' or lineage[-1] == 'Archea':
-                king = defs[lineage[-1]]
-            elif lineage[-1] == 'Eukaryota':
-                try:
-                    king = defs[lineage[-2]]
-                except KeyError:
-                    not_tracked_lineage += 1
-                    continue
-                except IndexError:
-                    no_sub_eukaryota_lineage_identified += 1
-                    continue
-        except KeyError:
-            not_found_in_taxonomy += 1
-            continue
-        species_dict[spec_ent] = king
-    #print(
-    #    f'{lost_species} unique species names were lost during kingdom identification.'
-    #)
-    print(f'{not_tracked_lineage} species were lost because their lineage wasnt '
-            f'one of interest, {no_sub_eukaryota_lineage_identified} were lost '
-            'because they only were identified as eykaryota, and '
-            f'{not_found_in_taxonomy} because their ID wasnt found in NCBI '
-            'Taxonomy')
-    not_classed_empty = []
-    not_classed_all = []
-    for paper, specs in paper_spec_names.items():
-        in_dict = False
-        for  spec in specs:
-            if spec in species_dict.keys():
-                in_dict = True
-        if not in_dict:
-            not_classed_all.append(paper)
-        if len(specs) == 0:
-            not_classed_empty.append(paper)
-    print('Number of papers missing a classification because all its species '
-            f'didnt get linked: {len(not_classed_all)}')
-    print([paper_spec_names[paper] for paper in not_classed_all])
+    species_dict = map_specs_to_kings(species_ids)
 
     return species_dict
 
@@ -268,6 +273,43 @@ def get_species_names(title, abstract, taxonerd):
         species = []
 
     return species
+
+
+def get_unique_papers(search_results):
+    """
+    Get unique papers to classify.
+    
+    parameters:
+        search_results, list of dict: search results to parse
+
+    returns:
+        to_classify, dict: keys are paperIds, values are dict with title and
+            abstract
+    """
+    to_classify = {}
+    for paper in search_results:
+        if (paper['paperId'] not in to_classify.keys()) and (paper['paperId']
+                                                             is not None):
+            to_classify[paper['paperId']] = {
+                'title': paper['title'],
+                'abstract': paper['abstract']
+            }
+        for ref in paper['references']:
+            if (ref['paperId'] not in to_classify.keys()) and (ref['paperId']
+                                                               is not None):
+                try:
+                    to_classify[ref['paperId']] = {
+                        'title': ref['title'],
+                        'abstract': ref['abstract']
+                    }
+                except KeyError:
+                    to_classify[ref['paperId']] = {
+                        'title': ref['title'],
+                        'abstract': None
+                    }
+
+    print(f'There are {len(to_classify)} unique papers to classify.')
+    return to_classify
 
 
 def generate_links_without_classification(search_results):
@@ -316,30 +358,8 @@ def generate_links_with_classification(search_results, taxonerd, nlp, linker,
         edges, list of three-tuple: the paper IDs of both citing and cited paper, and an attribute dictionary with the paper's title
     """
     # Make dict of unique papers for classification
-    to_classify = {}
-    for paper in search_results:
-        if (paper['paperId'] not in to_classify.keys()) and (paper['paperId']
-                                                             is not None):
-            to_classify[paper['paperId']] = {
-                'title': paper['title'],
-                'abstract': paper['abstract']
-            }
-        for ref in paper['references']:
-            if (ref['paperId'] not in to_classify.keys()) and (ref['paperId']
-                                                               is not None):
-                try:
-                    to_classify[ref['paperId']] = {
-                        'title': ref['title'],
-                        'abstract': ref['abstract']
-                    }
-                except KeyError:
-                    to_classify[ref['paperId']] = {
-                        'title': ref['title'],
-                        'abstract': None
-                    }
-
-    print(f'There are {len(to_classify)} unique papers to classify.')
-
+    to_classify = get_unique_papers(search_results)
+    
     # Identify entites
     paper_spec_names = {}
     start = time.time()
@@ -383,8 +403,10 @@ def main(search_result_path, graph_save_path, generic_dict, prefer_gpu, skip_cla
 
     # Read in search results
     print('\nLoading citation data...')
-    with open(search_result_path) as myf:
-        search_results = json.load(myf)
+    with jsonlines.open(search_result_path) as reader:
+        search_results = []
+        for obj in reader:
+            search_results.append(obj)
 
     # Define TaxoNERD model for classification
     if not skip_classification:
