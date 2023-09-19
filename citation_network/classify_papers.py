@@ -6,6 +6,7 @@ Author: Serena G. Lotreck
 import argparse
 from os.path import abspath
 import json
+import jsonlines
 from tqdm import tqdm
 from taxonerd import TaxoNERD
 from taxonerd.linking.linking import EntityLinker

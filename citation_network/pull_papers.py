@@ -36,14 +36,16 @@ def main(search_term, out_path, total_results, batch_size, saved_jsonl, intermed
             for obj in reader:
                 search_results.append(obj)
         print(f'Read in initial search results form {saved_jsonl}')
-    
-    
+
     # Make initial search
     else:
         print('\nMaking initial search query...')
         search_results = []
         for offset in tqdm(range(0, total_results, batch_size)):
-            query = f'http://api.semanticscholar.org/graph/v1/paper/search?query=desiccation+tolerance&offset={offset}&limit={batch_size-1}&fields=title,abstract,references'
+            if offset + batch_size == 10000:
+                query = f'http://api.semanticscholar.org/graph/v1/paper/search?query=desiccation+tolerance&offset={offset}&limit={batch_size-1}&fields=title,abstract,references'
+            else:
+                query = f'http://api.semanticscholar.org/graph/v1/paper/search?query=desiccation+tolerance&offset={offset}&limit={batch_size}&fields=title,abstract,references'
             succeeded = False
             reps = 0
             while not succeeded:
