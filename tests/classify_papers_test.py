@@ -9,6 +9,8 @@ import sys
 sys.path.append('../citation_network/')
 import classify_papers as cp
 import spacy
+import string
+import random
 
 
 ################################# get_unique_papers ###########################
@@ -125,25 +127,46 @@ def nlp():
 
 
 @pytest.fixture
-def uniq_names():
+def uniq_names_one_doc():
     return [
         'horses', 'cows', 'big cows', 'special cows', 'flowers',
         'multi word entities'
     ]
 
+@pytest.fixture
+def uniq_names_multi_doc():
+    return [''.join(random.choices(string.ascii_uppercase + string.digits,
+        k=9)) for i in range(25)]
 
-def test_make_ent_doc(nlp, uniq_names):
+def test_make_ent_docs_one_doc(nlp, uniq_names_one_doc):
 
-    result = cp.make_ent_doc(uniq_names, nlp)
+    result = cp.make_ent_docs(uniq_names_one_doc, nlp)
 
     # Since making the doc to check it would use the same code as the actual
     # code, we'll just check to make sure the number and identity of the
     # entities is the same
-    result_ent_list = [e.text for e in result.ents]
-    result_num_ents = len(result.ents)
 
-    assert result_ent_list == uniq_names
-    assert result_num_ents == len(uniq_names)
+    result_ent_list = [e.text for res in result for e in res.ents]
+    result_num_ents = len(result[0].ents)
+
+    assert len(result) == 1
+    assert result_ent_list == uniq_names_one_doc
+    assert result_num_ents == len(uniq_names_one_doc)
+
+def test_make_ent_docs_multi_doc(nlp, uniq_names_multi_doc):
+
+    # NOTE: This test is very memory intensive, takes about an hour in this
+    # form. Another option is to go into classify_papers.py and change all
+    # instances of 1000000 to 100; then change the above 250000 to just 25
+    result = cp.make_ent_docs(uniq_names_multi_doc, nlp)
+
+    result_ent_list = [e.text for res in result for e in res.ents]
+    result_num_ents = sum([len(res.ents) for res in result])
+
+    print(result)
+    assert len(result) == 3
+    assert result_ent_list == uniq_names_multi_doc
+    assert result_num_ents == len(uniq_names_multi_doc)
 
 
 ################################ map_specs_to_kings ###########################

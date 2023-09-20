@@ -16,6 +16,7 @@ from collections import Counter
 import networkx as nx
 import time
 import regex
+from math import ceil
 
 
 def fuzzy_match_kingdoms(paper_dict, generic_dict):
@@ -40,7 +41,7 @@ def fuzzy_match_kingdoms(paper_dict, generic_dict):
             text = paper_dict['title']
 
         # Build the regex string
-        sub_len = len(term)//3
+        sub_len = len(term) // 3
         spacejoined = "\s+".join(term.split())
         reg = fr'\b({spacejoined}){{e<={sub_len}}}\b'
 
@@ -52,9 +53,10 @@ def fuzzy_match_kingdoms(paper_dict, generic_dict):
             classes.append(king)
 
     return classes
- 
-   
-def map_paper_species(paper_spec_names, species_dict, generic_dict, to_classify):
+
+
+def map_paper_species(paper_spec_names, species_dict, generic_dict,
+                      to_classify):
     """
     Get the kingdom classifications for each paper.
 
@@ -75,7 +77,7 @@ def map_paper_species(paper_spec_names, species_dict, generic_dict, to_classify)
     additional_papers_identified = 0
     for paperId, spec_names in tqdm(paper_spec_names.items()):
         classes = []
-        # Try either generic terms 
+        # Try either generic terms
         if (len(spec_names) == 0) and (generic_dict != ''):
             classes = fuzzy_match_kingdoms(to_classify[paperId], generic_dict)
             if len(classes) != 0:
@@ -97,7 +99,8 @@ def map_paper_species(paper_spec_names, species_dict, generic_dict, to_classify)
         else:
             # If there's no classification, return NOCLASS
             king = 'NOCLASS'
-            print(f'\nSpec names for paper without classification: {spec_names}')
+            print(
+                f'\nSpec names for paper without classification: {spec_names}')
         classified[paperId] = king
 
     return classified
@@ -106,10 +109,10 @@ def map_paper_species(paper_spec_names, species_dict, generic_dict, to_classify)
 def map_specs_to_kings(species_ids):
     """
     Maps species names to kingdom classifications.
-    
+
     parameters:
         species_ids, dict: keys are species names, values are NCBI IDs
-    
+
     returns:
         species_dict, dict: keys are species names, values are kingdoms
     """
@@ -146,21 +149,24 @@ def map_specs_to_kings(species_ids):
     return species_dict
 
 
-def link_taxoniq(uniq_names, doc, species_ids):
+def link_taxoniq(uniq_names, docs, species_ids):
     """
     Use taxoniq directly to attempt to link species names not linked by
     TaxoNERD.
 
     parameters:
         uniq_names, list of str: unique species names
-        doc, spacy Doc object: doc with linked entities
+        docs, list of spacy Doc object: docs with linked entities
         species_ids, dict: keys are species, values are NCBI ID's
 
     returns:
         species_ids, dict: updated species IDs with futher identified species
     """
-    missed = [s for s in uniq_names if uniq_names not in [ent.text for ent in
-        doc.ents]]
+    all_doc_ents = [ent.text for doc in docs for ent in doc.ents]
+    missed = [
+        s for s in uniq_names
+        if uniq_names not in all_doc_ents
+    ]
     still_missed = []
     for ent in missed:
         try:
@@ -174,32 +180,66 @@ def link_taxoniq(uniq_names, doc, species_ids):
     return species_ids
 
 
-def make_ent_doc(uniq_names, nlp):
+def make_ent_docs(uniq_names, nlp):
     """
-    Make entities into dummy doc for linking.
-    
+    Make entities into dummy docs for linking. If there are more than 1 million
+    characters worth of entities, breaks up into multiple docs to get around
+    spacy's character limit.
+
     parameters:
         uniq_names, list of str: unique entities to link
         nlp, spacy NLP object: model to use to build doc
-    
+
     returns:
-        doc, spacy Doc object: doc with entities set as doc.ents
+        docs, list of spacy Doc object: docs with entities set as doc.ents
     """
-    doc = nlp(' '.join(uniq_names))
-    span_idxs = []
-    for i, ent in enumerate(uniq_names):
-        if i == 0:
-            start = 0
-        else:
-            start = len(' '.join(uniq_names[:i]).split(' '))
-        end = start + len(ent.split(' '))
-        span_idxs.append((start, end))
-    spans = [Span(doc, e[0], e[1], "ENTITY") for e in span_idxs]
-    doc.set_ents(spans)
-    print(f'Number of entities in dummy doc: {len(doc.ents)}')
-    
-    return doc
-    
+    # Get the number of docs that we need to make
+    if len(' '.join(uniq_names)) < 100:
+        num_docs = 1
+    else:
+        num_docs = ceil(len(' '.join(uniq_names))/100)
+
+    # Make docs
+    docs = []
+    last_idx = 0 # To break up entities for docs
+    single_tok_times = []
+    for _ in range(num_docs):
+        char_num = 0 # So we can break when we get to too long
+        names_to_keep = [] # For making the doc later
+        span_idxs = [] # For keeping track of spans
+        prev_last = 0
+        for i, ent in enumerate(uniq_names[last_idx:]):
+            # We can't naively assume what spacy's tokenization wil be;
+            # splitting on spaces causes errors if spacy's tokenization is
+            # different. Therefore, we need to check how many tokens are in
+            # spacy's tokenization for each word
+            if char_num >= 100:
+                last_idx += i
+                break
+            start = prev_last
+            single_tok_start_time = time.time()
+            num_toks = len(nlp(ent, disable=['tagger', 'attribute_ruler',
+                'lemmatizer', 'parser', 'ner']))
+            single_tok_times.append(time.time())
+            end = start + num_toks
+            prev_last += num_toks
+            span_idxs.append((start, end))
+            names_to_keep.append(ent)
+            char_num += len(ent) + 1 # To account for trailing space
+        single_doc_start_time = time.time()
+        doc = nlp(' '.join(names_to_keep))
+        toks = "\n".join([t.text for t in doc])
+        spans = [Span(doc, e[0], e[1], "ENTITY") for e in span_idxs]
+        doc.set_ents(spans)
+        print(f'It took {time.time() - single_doc_start_time:.2f} seconds to '
+                f'tokenize and add ents to doc number {_}')
+        docs.append(doc)
+    print('On average, it took '
+        f'{sum(single_tok_times)/len(single_tok_times):.2f} seconds to '
+        'tokenize each entity')
+
+    return docs
+
 
 def get_species_classes(paper_spec_names, nlp, linker):
     """
@@ -223,21 +263,23 @@ def get_species_classes(paper_spec_names, nlp, linker):
 
     # Make into a doc with entities
     print('Formatting unique entities into one document...')
-    doc = make_ent_doc(uniq_names, nlp)
+    docs = make_ent_docs(uniq_names, nlp)
 
     # Perform linking
     print('Performing TaxoNERD entity linking...')
-    start = time.time()
-    doc = linker(doc)
-    print(f'Time to apply linker: {time.time() - start: .2f}')
     species_ids = {}
-    for ent in doc.ents:
-        ent_id = ent._.kb_ents[0][0].split(':')[1]
-        species_ids[ent.text] = ent_id
+    print(f'There are {len(docs)} documents to link.')
+    for i, doc in enumerate(docs):
+        start = time.time()
+        doc = linker(doc)
+        print(f'Time to apply linker on doc {i}: {time.time() - start: .2f}')
+        for ent in doc.ents:
+            ent_id = ent._.kb_ents[0][0].split(':')[1]
+            species_ids[ent.text] = ent_id
 
     # Use taxoniq to try and fill in some unlinked species
     print(f'Using taxoniq to attempt to link the missed entities...')
-    species_ids = link_taxoniq(uniq_names, doc, species_ids)
+    species_ids = link_taxoniq(uniq_names, docs, species_ids)
 
     # Map to kingdoms
     print('Mapping to kingdom classifications...')
@@ -341,7 +383,7 @@ def generate_links_without_classification(search_results):
 
 
 def generate_links_with_classification(search_results, taxonerd, nlp, linker,
-        generic_dict):
+                                       generic_dict):
     """
     Generate a list of edges by paper ID from the results of a Semantic Scholar query. Removes malformed
     citations with no paperID, and classifies nodes by the organisms in their titles.
@@ -360,7 +402,7 @@ def generate_links_with_classification(search_results, taxonerd, nlp, linker,
     """
     # Make dict of unique papers for classification
     to_classify = get_unique_papers(search_results)
-    
+
     # Identify entites
     paper_spec_names = {}
     start = time.time()
@@ -374,7 +416,7 @@ def generate_links_with_classification(search_results, taxonerd, nlp, linker,
     start = time.time()
     species_dict = get_species_classes(paper_spec_names, nlp, linker)
     classified = map_paper_species(paper_spec_names, species_dict,
-            generic_dict, to_classify)
+                                   generic_dict, to_classify)
     print(
         f'Time to get the classification of entities from all papers: {time.time() - start: .2f}'
     )
@@ -400,7 +442,8 @@ def generate_links_with_classification(search_results, taxonerd, nlp, linker,
     return nodes, edges
 
 
-def main(search_result_path, graph_save_path, generic_dict, prefer_gpu, skip_classification):
+def main(search_result_path, graph_save_path, generic_dict, prefer_gpu,
+         skip_classification):
 
     # Read in search results
     print('\nLoading citation data...')
@@ -455,7 +498,9 @@ if __name__ == '__main__':
     parser.add_argument('graph_save_path',
                         type=str,
                         help='Path to save graph, extension is .graphml')
-    parser.add_argument('-generic_dict', type=str, default='',
+    parser.add_argument('-generic_dict',
+                        type=str,
+                        default='',
                         help='Path to dictionary mapping general terms to '
                         'life kingdoms, to be used for fuzzy mapping')
     parser.add_argument('--prefer_gpu',
@@ -475,4 +520,4 @@ if __name__ == '__main__':
             generic_dict = json.load(myf)
 
     main(args.search_result_path, args.graph_save_path, generic_dict,
-            args.prefer_gpu, args.skip_classification)
+         args.prefer_gpu, args.skip_classification)
