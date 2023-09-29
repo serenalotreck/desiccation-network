@@ -5,6 +5,7 @@ Author: Serena G. Lotreck
 """
 import argparse
 from os.path import abspath
+from os import listdir
 import json
 import jsonlines
 from tqdm import tqdm
@@ -124,6 +125,10 @@ def map_specs_to_kings(species_ids):
         'Archea': 'Microbe',
         'Fungi': 'Fungi'
     }
+    not_tracked_lineage = 0
+    no_sub_eukaryota_lineage = 0
+    not_found_in_taxonomy = 0
+    empty_lineage = 0
     for spec_ent, ncbi_id in tqdm(species_ids.items()):
         try:
             t1 = taxoniq.Taxon(ncbi_id)
@@ -139,12 +144,25 @@ def map_specs_to_kings(species_ids):
                     not_tracked_lineage += 1
                     continue
                 except IndexError:
-                    no_sub_eukaryota_lineage_identified += 1
+                    no_sub_eukaryota_lineage += 1
                     continue
         except KeyError:
             not_found_in_taxonomy += 1
             continue
+        except IndexError:
+            empty_lineage += 1
         species_dict[spec_ent] = king
+
+    print(f'When building the species --> kingdom dict, {not_tracked_lineage} '
+            'species were dropped because their kingdom wasn\'t in our list '
+            f'of interest, {no_sub_eukaryota_lineage} were dropped because '
+            'they were only identifyable as Eukaryota, and '
+            f'{not_found_in_taxonomy} because they did not appear in '
+            'taxoniq\'s local version of NCBI Taxonomy. This could mean they '
+            'are not in the actual taxonomy, or that they were added after '
+            'taxoniq last updated its database version. Finally, '
+            f'{empty_lineage} species were dropped because their lineage in '
+            'the taxonomy entry was empty.')
 
     return species_dict
 
@@ -194,10 +212,10 @@ def make_ent_docs(uniq_names, nlp):
         docs, list of spacy Doc object: docs with entities set as doc.ents
     """
     # Get the number of docs that we need to make
-    if len(' '.join(uniq_names)) < 100:
+    if len(' '.join(uniq_names)) < 10000:
         num_docs = 1
     else:
-        num_docs = ceil(len(' '.join(uniq_names))/100)
+        num_docs = ceil(len(' '.join(uniq_names))/10000)
 
     # Make docs
     docs = []
@@ -213,14 +231,14 @@ def make_ent_docs(uniq_names, nlp):
             # splitting on spaces causes errors if spacy's tokenization is
             # different. Therefore, we need to check how many tokens are in
             # spacy's tokenization for each word
-            if char_num >= 100:
+            if char_num + len(ent) >= 10000:
                 last_idx += i
                 break
             start = prev_last
             single_tok_start_time = time.time()
             num_toks = len(nlp(ent, disable=['tagger', 'attribute_ruler',
                 'lemmatizer', 'parser', 'ner']))
-            single_tok_times.append(time.time())
+            single_tok_times.append(time.time() - single_tok_start_time)
             end = start + num_toks
             prev_last += num_toks
             span_idxs.append((start, end))
@@ -241,7 +259,8 @@ def make_ent_docs(uniq_names, nlp):
     return docs
 
 
-def get_species_classes(paper_spec_names, nlp, linker):
+def get_species_classes(paper_spec_names, nlp, linker, intermediate_save_path,
+                        use_intermed):
     """
     Get organism classifications from a list of NCBI Taxonomy IDs
 
@@ -250,6 +269,10 @@ def get_species_classes(paper_spec_names, nlp, linker):
             species names for the paper
         nlp, spacy NLP object: model to use to make doc for linking
         linker, taxonerd EntityLinker instance: linker to use to get IDs
+        intermediate_save_path, str: path to directory to save intermediate
+            results
+        use_intermed, bool: whether or not to read intermediate files out of
+            the intermediate save path
 
     returns:
         species_dict, keys are species names, values are kingdom
@@ -266,20 +289,32 @@ def get_species_classes(paper_spec_names, nlp, linker):
     docs = make_ent_docs(uniq_names, nlp)
 
     # Perform linking
-    print('Performing TaxoNERD entity linking...')
-    species_ids = {}
-    print(f'There are {len(docs)} documents to link.')
-    for i, doc in enumerate(docs):
-        start = time.time()
-        doc = linker(doc)
-        print(f'Time to apply linker on doc {i}: {time.time() - start: .2f}')
-        for ent in doc.ents:
-            ent_id = ent._.kb_ents[0][0].split(':')[1]
-            species_ids[ent.text] = ent_id
-
-    # Use taxoniq to try and fill in some unlinked species
-    print(f'Using taxoniq to attempt to link the missed entities...')
-    species_ids = link_taxoniq(uniq_names, docs, species_ids)
+    if use_intermed and ('species_ids.json' in
+            listdir(intermediate_save_path)):
+        species_id_save_name = f'{intermediate_save_path}/species_ids.json'
+        with open(species_id_save_name) as myf:
+            species_ids = json.load(myf)
+        print(f'Read in species NCBI IDs from {species_id_save_name}')
+    else:
+        print('Performing TaxoNERD entity linking...')
+        species_ids = {}
+        print(f'There are {len(docs)} spacy documents to link.')
+        for i, doc in enumerate(docs):
+            start = time.time()
+            doc = linker(doc)
+            print(f'Time to apply linker on doc {i}: {time.time() - start: .2f}')
+            for ent in doc.ents:
+                ent_id = ent._.kb_ents[0][0].split(':')[1]
+                species_ids[ent.text] = ent_id
+         # Use taxoniq to try and fill in some unlinked species
+        print(f'Using taxoniq to attempt to link the missed entities...')
+        species_ids = link_taxoniq(uniq_names, docs, species_ids)
+        if intermediate_save_path != '':
+            species_id_save_name = f'{intermediate_save_path}/species_ids.json'
+            with open(species_id_save_name, 'w') as myf:
+                json.dump(species_ids, myf)
+            print(f'Saved species id dictionary as {species_id_save_name}')
+   
 
     # Map to kingdoms
     print('Mapping to kingdom classifications...')
@@ -321,7 +356,7 @@ def get_species_names(title, abstract, taxonerd):
 def get_unique_papers(search_results):
     """
     Get unique papers to classify.
-    
+
     parameters:
         search_results, list of dict: search results to parse
 
@@ -383,7 +418,7 @@ def generate_links_without_classification(search_results):
 
 
 def generate_links_with_classification(search_results, taxonerd, nlp, linker,
-                                       generic_dict):
+                                       intermediate_save_path, use_intermed, generic_dict):
     """
     Generate a list of edges by paper ID from the results of a Semantic Scholar query. Removes malformed
     citations with no paperID, and classifies nodes by the organisms in their titles.
@@ -393,6 +428,10 @@ def generate_links_with_classification(search_results, taxonerd, nlp, linker,
         taxonerd, TaxoNERD instance: model to use for classification
         nlp, spacy NLP object: model to use to make doc for linking
         linker, taxonerd EntityLinker instance: linker to use to get IDs
+        intermediate_save_path, str: path to directory to save intermediate
+            results
+        use_intermed, bool: whether or not to read intermediate files out of
+            the intermediate save path
         generic_dict, dict: keys are generic terms for kingdoms, values are
             kingdoms
 
@@ -403,20 +442,60 @@ def generate_links_with_classification(search_results, taxonerd, nlp, linker,
     # Make dict of unique papers for classification
     to_classify = get_unique_papers(search_results)
 
-    # Identify entites
-    paper_spec_names = {}
+    # Start timer
     start = time.time()
-    for paperId, data in tqdm(to_classify.items()):
-        species_names = get_species_names(data['title'], data['abstract'],
-                                          taxonerd)
-        paper_spec_names[paperId] = species_names
-    print(f'Time to get entities from all papers: {time.time() - start: .2f}')
+
+    # Identify entites
+    if use_intermed and ('paper_to_species.json' in
+            listdir(intermediate_save_path)):
+        paper_spec_save_name = f'{intermediate_save_path}/paper_to_species.json'
+        with open(paper_spec_save_name) as myf:
+            paper_spec_names = json.load(myf)
+        print(f'Read in paper to species dict from {paper_spec_save_name}')
+    else:
+        paper_spec_names = {}
+        for paperId, data in tqdm(to_classify.items()):
+            species_names = get_species_names(data['title'], data['abstract'],
+                                              taxonerd)
+            paper_spec_names[paperId] = species_names
+        print(f'Time to get entities from all papers: {time.time() - start: .2f}')
+        if intermediate_save_path != '':
+            paper_spec_save_name = f'{intermediate_save_path}/paper_to_species.json'
+            with open(paper_spec_save_name, 'w') as myf:
+                json.dump(paper_spec_names, myf)
+            print(f'Saved paper --> species dict as {paper_spec_save_name}')
 
     # Map entities to classifications
-    start = time.time()
-    species_dict = get_species_classes(paper_spec_names, nlp, linker)
-    classified = map_paper_species(paper_spec_names, species_dict,
+    if use_intermed and ('species_dict.json' in
+            listdir(intermediate_save_path)):
+        species_dict_save_name = f'{intermediate_save_path}/species_dict.json'
+        with open(species_dict_save_name) as myf:
+            species_dict = json.load(myf)
+        print(f'Read in species dict as {species_dict_save_name}')
+    else:
+        start = time.time()
+        species_dict = get_species_classes(paper_spec_names, nlp, linker,
+                intermediate_save_path, use_intermed)
+        if intermediate_save_path != '':
+            species_dict_save_name = f'{intermediate_save_path}/species_dict.json'
+            with open(species_dict_save_name, 'w') as myf:
+                json.dump(species_dict, myf)
+            print(f'Saved species dict as {species_dict_save_name}')
+
+    if use_intermed and ('paper_classifications.json' in
+            listdir(intermediate_save_path)):
+        classified_save_name = f'{intermediate_save_path}/paper_classifications.json'
+        with open(classified_save_name) as myf:
+            classified = json.load(myf)
+        print(f'Read in paper classifications from {classified_save_name}')
+    else:
+        classified = map_paper_species(paper_spec_names, species_dict,
                                    generic_dict, to_classify)
+        if intermediate_save_path != '':
+            classified_save_name = f'{intermediate_save_path}/paper_classifications.json'
+            with open(classified_save_name, 'w') as myf:
+                json.dump(classified, myf)
+            print(f'Saved paper classifications as {classified_save_name}')
     print(
         f'Time to get the classification of entities from all papers: {time.time() - start: .2f}'
     )
@@ -442,8 +521,8 @@ def generate_links_with_classification(search_results, taxonerd, nlp, linker,
     return nodes, edges
 
 
-def main(search_result_path, graph_save_path, generic_dict, prefer_gpu,
-         skip_classification):
+def main(search_result_path, graph_save_path, intermediate_save_path,
+        use_intermed, generic_dict, prefer_gpu, skip_classification):
 
     # Read in search results
     print('\nLoading citation data...')
@@ -471,7 +550,8 @@ def main(search_result_path, graph_save_path, generic_dict, prefer_gpu,
         nodes, edges = generate_links_without_classification(search_results)
     else:
         nodes, edges = generate_links_with_classification(
-            search_results, taxonerd, nlp, linker, generic_dict)
+            search_results, taxonerd, nlp, linker, intermediate_save_path,
+            use_intermed, generic_dict)
 
     # Build graph
     print('\nBuilding graph...')
@@ -498,6 +578,10 @@ if __name__ == '__main__':
     parser.add_argument('graph_save_path',
                         type=str,
                         help='Path to save graph, extension is .graphml')
+    parser.add_argument('-intermediate_save_path', type=str, default='',
+                        help='Path to directory to save intermediate results, '
+                        'which can be used to re-start this script from the '
+                        'middle')
     parser.add_argument('-generic_dict',
                         type=str,
                         default='',
@@ -506,6 +590,9 @@ if __name__ == '__main__':
     parser.add_argument('--prefer_gpu',
                         action='store_true',
                         help='Whether or not GPU is available to use')
+    parser.add_argument('--use_intermed', action='store_true',
+                        help='Use files with original names from '
+                        'intermediate_save_path directory for recovery')
     parser.add_argument('--skip_classification',
                         action='store_true',
                         help='Build the graph without node classification')
@@ -514,10 +601,13 @@ if __name__ == '__main__':
 
     args.search_result_path = abspath(args.search_result_path)
     args.graph_save_path = abspath(args.graph_save_path)
+    if args.intermediate_save_path != '':
+        args.intermediate_save_path = abspath(args.intermediate_save_path)
     if args.generic_dict != '':
         args.generic_dict = abspath(args.generic_dict)
         with open(args.generic_dict) as myf:
             generic_dict = json.load(myf)
 
-    main(args.search_result_path, args.graph_save_path, generic_dict,
+    main(args.search_result_path, args.graph_save_path,
+            args.intermediate_save_path, args.use_intermed, generic_dict,
          args.prefer_gpu, args.skip_classification)
