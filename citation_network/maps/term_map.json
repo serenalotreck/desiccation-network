@@ -13,6 +13,18 @@
 	"Wheat": "Plant",
 	"Tardigrade": "Animal",
 	"Nematode": "Animal",
+	"Roundworm": "Animal",
+	"Brine shrimp": "Animal",
+	"Rotifers": "Animal",
+	"Crustacean": "Animal",
+	"Arthropods": "Animal",
 	"Bacterial": "Microbe",
-	"Archeal": "Microbe"
+	"Archeal": "Microbe",
+	"Microbial": "Microbe",
+	"Prokaryote": "Microbe",
+	"Cyanobacteria": "Microbe",
+	"Blastospores": "Fungi",
+	"Propagule": "Fungi",
+	"Fungal": "Fungi",
+	"Lichen": "Fungi"
 }
