@@ -1,0 +1,2 @@
+# PubTator
+This directory contains sample code from the [PubTator documentation](https://www.ncbi.nlm.nih.gov/research/pubtator/api.html) that can be used to annotate arbitrary textusing the PubTator API, as well as code to format text into the required json format. The contents of the `input` and `output` directories are ignored, but the (mostly) empty directories are tracked so that they can be used by anyone cloning this repository.
