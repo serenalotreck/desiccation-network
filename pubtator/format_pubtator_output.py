@@ -8,6 +8,8 @@ import argparse
 from os.path import abspath, splitext
 from os import listdir
 import json
+from tqdm import tqdm
+import pandas as pd
 
 
 def parse_doc(annotations_for_df, doc):
@@ -38,11 +40,17 @@ def main(output_dir, csv_out_path):
     # Read in the output files
     print('\nReading in the files...')
     annotations = {}
+    skipped = 0
     for f in listdir(output_dir):
         if splitext(f)[1] == '.json':
-            with open(f'{output_dir}/{f}') as myf:
-                doc = json.load(myf)
-                annotations[splitext(f)[0]] = doc
+            try:
+                with open(f'{output_dir}/{f}') as myf:
+                    doc = json.load(myf)
+                    annotations[splitext(f)[0]] = doc
+            except json.decoder.JSONDecodeError:
+                print(f'Document {f} is mis-formatted and is being skipped.')
+                skipped += 1
+    print(f'{skipped} of {len(listdir(output_dir))} documents were lost.')
 
     # Get the text for annotations and format for df
     print('\nFormatting annotations...')
@@ -59,7 +67,7 @@ def main(output_dir, csv_out_path):
 
     # Save df
     print('\nSaving annotation df...')
-    ann_df.to_csv(csv_out_path)
+    ann_df.to_csv(csv_out_path, index=False)
 
     print('\nDone!')
 
