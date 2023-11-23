@@ -43,9 +43,9 @@ def main(search_term, out_path, total_results, batch_size, saved_jsonl, intermed
         search_results = []
         for offset in tqdm(range(0, total_results, batch_size)):
             if offset + batch_size == 10000:
-                query = f'http://api.semanticscholar.org/graph/v1/paper/search?query=desiccation+tolerance&offset={offset}&limit={batch_size-1}&fields=title,abstract,references'
+                query = f'http://api.semanticscholar.org/graph/v1/paper/search?query={search_term}&offset={offset}&limit={batch_size-1}&fields=title,abstract,references,year'
             else:
-                query = f'http://api.semanticscholar.org/graph/v1/paper/search?query=desiccation+tolerance&offset={offset}&limit={batch_size}&fields=title,abstract,references'
+                query = f'http://api.semanticscholar.org/graph/v1/paper/search?query={search_term}&offset={offset}&limit={batch_size}&fields=title,abstract,references,year'
             succeeded = False
             reps = 0
             while not succeeded:
@@ -84,7 +84,7 @@ def main(search_term, out_path, total_results, batch_size, saved_jsonl, intermed
             ids = unique_ref_ids[i: i+500]
             result = requests.post(
                     'https://api.semanticscholar.org/graph/v1/paper/batch',
-                     params={'fields': 'title,abstract'},
+                     params={'fields': 'title,abstract,year'},
                      json={'ids': ids}
                     ).json()
             for r in result:
@@ -95,7 +95,7 @@ def main(search_term, out_path, total_results, batch_size, saved_jsonl, intermed
     else:
         result = requests.post(
                 'https://api.semanticscholar.org/graph/v1/paper/batch',
-                 params={'fields': 'title,abstract'},
+                 params={'fields': 'title,abstract,year'},
                  json={'ids': unique_ref_ids}
                 ).json()
         for r in result:
