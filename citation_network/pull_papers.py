@@ -26,7 +26,8 @@ import json
 import jsonlines
 
 
-def main(search_term, out_path, total_results, batch_size, saved_jsonl, intermediate_path):
+def main(search_term, out_path, relevance_search, total_results, batch_size, saved_jsonl,
+        intermediate_path):
 
     # If provided, read in intermediate results
     if saved_jsonl != '':
@@ -42,10 +43,13 @@ def main(search_term, out_path, total_results, batch_size, saved_jsonl, intermed
         print('\nMaking initial search query...')
         search_results = []
         for offset in tqdm(range(0, total_results, batch_size)):
-            if offset + batch_size == 10000:
-                query = f'http://api.semanticscholar.org/graph/v1/paper/search?query={search_term}&offset={offset}&limit={batch_size-1}&fields=title,abstract,references,year'
+            if relevance_search:
+                if offset + batch_size == 1000:
+                    query = f'http://api.semanticscholar.org/graph/v1/paper/search?query={search_term}&offset={offset}&limit={batch_size-1}&fields=title,abstract,references,year'
+                else:
+                    query = f'http://api.semanticscholar.org/graph/v1/paper/search?query={search_term}&offset={offset}&limit={batch_size}&fields=title,abstract,references,year'
             else:
-                query = f'http://api.semanticscholar.org/graph/v1/paper/search?query={search_term}&offset={offset}&limit={batch_size}&fields=title,abstract,references,year'
+                query = f'https://api.semanticscholar.org/graph/v1/paper/search/bulk/?query={search_term}&offset={offset}&limit={batch_size-1}&fields=title,abstract,references,year'
             succeeded = False
             reps = 0
             while not succeeded:
@@ -105,7 +109,7 @@ def main(search_term, out_path, total_results, batch_size, saved_jsonl, intermed
                 lost_refs += 1
     print(f'There are {len(unique_ref_ids)} unique references in this dataset. '
             f'{lost_refs} references were lost due to query failure.')
-    
+
     # Save references if requested
     if intermediate_path != '':
         print('\nSaving intermediate references...')
@@ -146,10 +150,16 @@ if __name__ == "__main__":
                         type=str,
                         help='File name with full path to save output. '
                         'Extension is .jsonl')
+    parser.add_argument('--relevance_search', action='store_true',
+                        help='Whether or not to use relevance search instead '
+                        'of bulk seach. If passed, only 999 results will be '
+                        'returned, instead of the 10000 default max.')
     parser.add_argument('-total_results', type=int, default=10000,
-                        help='Number of search results to get')
+                        help='Number of search results to get, max is 10000, '
+                        'default is 10000.')
     parser.add_argument('-batch_size', type=int, default=100,
-                        help='Chunk size in which to retrieve docs, must be > 1')
+                        help='Chunk size in which to retrieve docs, must be > 1 '
+                        'and =< 100. Default is 100.')
     parser.add_argument('-saved_jsonl', type=str, default='',
                         help='Path to a jsonl of saved search results that '
                         'have not been combined or had abstracts pulled for '
@@ -167,5 +177,11 @@ if __name__ == "__main__":
     if args.intermediate_path != '':
         args.intermediate_path = abspath(args.intermediate_path)
 
-    main(args.search_term, args.out_path, args.total_results, args.batch_size,
-            args.saved_jsonl, args.intermediate_path)
+    if args.relevance_search:
+        print('\nA relevance search has been requested, the provided request '
+                f'of {args.total_results} results will be reduced to 9999.')
+        args.total_results = 999
+
+    main(args.search_term, args.out_path, args.relevance_search,
+            args.total_results, args.batch_size, args.saved_jsonl,
+            args.intermediate_path)
