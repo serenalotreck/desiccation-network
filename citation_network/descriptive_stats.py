@@ -1,0 +1,253 @@
+"""
+Calculates basic descriptive stats about a citation network dataset and its
+classifications (the outputs of pull_papers.py and classify_papers.py).
+
+Author: Serena G. Lotreck
+"""
+import argparse
+from os.path import abspath
+import jsonlines
+import networkx as nx
+import matplotlib.pyplot as plt
+from collections import Counter, defaultdict
+
+
+def per_class_cumulative(years_per_class, search_term, out_loc, out_prefix):
+    """
+    Generates a cumulative plot of publications separated by class.
+
+    parameters:
+        years_per_class, dict: years per class
+        search_term, str: name for title
+        out_loc, str: path to directory to save
+        out_prefix, str: string to prepend to output filename
+
+    returns:
+        None
+    """
+    colors = {'Plant': '#009E73', 'Animal': '#56B4E9', 'Microbe': '#E69F00', 'Fungi': '#F0E442', 'NOCLASS': '#CC79A7', 'missing_in_new': '#C7C7C7'}
+    fig, ax = plt.subplots(1, 1, figsize=(24,6))
+    for cls, yrs in years_per_class.items():
+        yr_counts = Counter(yrs)
+        ordered_yrs = sorted(yr_counts.keys())
+        cumulative_years = {y:(ordered_yrs[i] + sum(ordered_yrs[:i]))/1000 for i, y in enumerate(ordered_yrs)}
+        ax.scatter(cumulative_years.keys(), cumulative_years.values(), color=colors[cls], alpha=0.5, label=cls)
+    plt.legend()
+    plt.title(f'Cumulative publications over time for search term "{search_term}"')
+    plt.ylabel('Total publications (thousands)')
+    plt.xlabel('Year')
+    savepath = f'{out_loc}/{out_prefix}_per_class_cumulative_plot.png'
+    plt.savefig(savepath, format='png', dpi=600, bbox_inches='tight')
+    print(f'Saved per-class cumulative plot as {savepath}')
+
+
+def per_class_histogram(flattened_papers, paper_classifications, search_term, out_loc, out_prefix):
+    """
+    Generates a histogram of publication years separated by classification.
+
+    parameters:
+        flattened_papers, dict: keys are paperId's, values are papers
+        paper_classifications, dic: keys are paperId's, values are classes
+        search_term, str: name for title
+        out_loc, str: path to directory to save
+        out_prefix, str: string to prepend to output filename
+
+    returns:
+        years_per_class, dict: years per class
+    """
+    # Prep data
+    years_per_class = defaultdict(list)
+    missing_class = 0
+    for pid, p in flattened_papers.items():
+        try:
+            year = p['year']
+        except KeyError:
+            continue
+        try:
+            p_class = paper_classifications[pid]
+        except KeyError:
+            missing_class += 1
+            continue
+        if year is not None:
+            years_per_class[p_class].append(year)
+    if missing_class > 0:
+        print(f'{missing_class} papers were dropped because they were not '
+        'found in the classification dataset.')
+
+    colors = {'Plant': '#009E73', 'Animal': '#56B4E9', 'Microbe': '#E69F00', 'Fungi': '#F0E442', 'NOCLASS': '#CC79A7', 'missing_in_new': '#C7C7C7'}
+    fig, ax = plt.subplots(1, 1)
+    for cls, yrs in years_per_class.items():
+        _ = ax.hist(yrs, bins=100, color=colors[cls], label=cls, alpha=0.5)
+    plt.legend()
+    plt.title(f'New publications per year by study system for search term "{search_term}"')
+    plt.xlabel('Publication Year')
+    plt.ylabel('Count')
+    savepath = f'{out_loc}/{out_prefix}_histogram_per_class.png'
+    plt.savefig(savepath, format='png', dpi=600, bbox_inches='tight')
+    print(f'Saved per-class histogram as {savepath}')
+
+    return years_per_class
+
+
+def overall_cumulative(paper_years, search_term, out_loc, out_prefix):
+    """
+    Generates, shows and saves overall cumulative pubs.
+
+    parameters:
+        paper_years, list of int: publication years
+        search_term, str: name for title
+        out_loc, str: path to directory to save
+        out_prefix, str: string to prepend to output filename
+
+    returns:
+        None
+    """
+    counts_per_year = Counter(paper_years)
+    ordered_years = sorted(counts_per_year.keys())
+    cumulative_years = {y:(ordered_years[i] + sum(ordered_years[:i]))/1000 for i, y in enumerate(ordered_years)}
+    fig, ax = plt.subplots(1, 1)
+    ax.scatter(cumulative_years.keys(), cumulative_years.values())
+    plt.title(f'Cumulative publications over time for search term "{search_term}"')
+    plt.ylabel('Total publications (thousands)')
+    plt.xlabel('Year')
+    savepath = f'{out_loc}/{out_prefix}_overall_cumulative_pubs.png'
+    plt.savefig(savepath, format='png', dpi=600, bbox_inches='tight')
+    print(f'Saved cumulative plot as {savepath}')
+
+
+def overall_histogram(flattened_papers, search_term, out_loc, out_prefix):
+    """
+    Generates, shows and saves overall histogram.
+
+    parameters:
+        flattened_papers, dict: keys are paperIds, values are papers
+        search_term, str: name for title
+        out_loc, str: path to directory to save
+        out_prefix, str: string to prepend to output filename
+
+    returns:
+        paper_years, list of int: publication years
+    """
+    missing_years = 0
+    paper_years = []
+    for pid, p in flattened_papers.items():
+        try:
+            year = p['year']
+            if year is not None:
+                paper_years.append(year)
+            else:
+                missing_years += 1
+        except KeyError:
+            missing_years += 1
+    print(f'{missing_years} papers of {len(flattened_papers.keys())} total papers did not have a year of publication.')
+
+    fig, ax = plt.subplots(1, 1)
+    _ = ax.hist(paper_years, bins=100)
+    plt.title(f'New publications per year for search term "{search_term}"')
+    plt.xlabel('Publication Year')
+    plt.ylabel('Count')
+    savepath = f'{out_loc}/{out_prefix}_overall_pub_histogram.png'
+    plt.savefig(savepath, format='png', dpi=600, bbox_inches='tight')
+    print(f'Saved histogram as {savepath}')
+
+    return paper_years
+
+def flatten_papers(papers):
+    """
+    Flatten pulled papers and their data.
+
+    parameters:
+        papers, list: list of papers to flatten
+
+    returns:
+        flattened_papers, dict: flattened papers indexed by paperId
+    """
+    flattened_papers = {}
+    for p in papers:
+        try:
+            flattened_papers[p['paperId']] = {'title': p['title'], 'abstract': p['abstract'], 'year': p['year']}
+        except KeyError:
+            try:
+                flattened_papers[p['paperId']] = {'title': p['title'], 'year': p['year']}
+            except KeyError:
+                flattened_papers[p['paperId']] = {'title': p['title']}
+        for r in p['references']:
+            try:
+                flattened_papers[r['paperId']] = {'title': r['title'], 'abstract': r['abstract'], 'year': r['year']}
+            except KeyError:
+                try:
+                    flattened_papers[r['paperId']] = {'title': r['title'], 'year': r['year']}
+                except KeyError:
+                    flattened_papers[r['paperId']] = {'title': r['title']}
+
+    return flattened_papers
+
+
+def main(jsonl, graphml, search_term, out_loc, out_prefix):
+
+    # Read in the data
+    print('\nReading in data...')
+    with jsonlines.open(jsonl) as reader:
+        pulled_papers = []
+        for obj in reader:
+            pulled_papers.append(obj)
+    classified_graph = nx.read_graphml(graphml)
+
+    # Prep the data
+    print('\nPreparing the data and performing initial statistics...')
+    flattened_papers = flatten_papers(pulled_papers)
+    paper_classifications = {k: v['study_system'] for k, v in classified_graph.nodes(data=True)}
+    print(f'There are {len(flattened_papers)} unique papers in the dataset.')
+    classes, flattened, intersection = len(set(paper_classifications)), len(set(flattened_papers.keys())), len(set(flattened_papers.keys()).intersection(set(paper_classifications)))
+    print('Performing common-sense check on the two versions of the dataset:')
+    print(f'There are {intersection} papers in common between both datasets.')
+    if (classes - intersection != 0) or (flattened - intersection != 0):
+        print('This is not identical to the number of papers in each dataset alone.')
+        if classes - intersection > 0:
+            print(f'There are {classes - intersection} papers missing from the classified papers.')
+        if flattened - intersection > 0:
+            print(f'There are {flattened - intersection} papers missing from the original papers.')
+    else:
+        print('This is identical to the number of papers in each dataset.')
+
+    # Generate overall histogram
+    print('\nGenerating overall publication histogram...')
+    pub_years = overall_histogram(flattened_papers, search_term, out_loc, out_prefix)
+
+    # Generate overall cumulative
+    print('\nGenerating overall cumulative publications per year chart...')
+    overall_cumulative(pub_years, search_term, out_loc, out_prefix)
+
+    # Generate per-class histogram
+    print('\nGenerating per-class histogram...')
+    years_per_class = per_class_histogram(flattened_papers, paper_classifications, search_term, out_loc, out_prefix)
+
+    # Generate per-class cumulative
+    print('\nGenerating per-class overall plot...')
+    per_class_cumulative(years_per_class, search_term, out_loc, out_prefix)
+
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description='Get descriptive stats')
+
+    parser.add_argument('jsonl', type=str,
+            help='Path to output of pull_papers.py')
+    parser.add_argument('graphml', type=str,
+            help='Path to output of classify_papers.py that took the jsonl arg '
+            'as input')
+    parser.add_argument('search_term', type=str,
+            help='String to use in chart titles')
+    parser.add_argument('out_loc', type=str,
+            help='Path to save outputs')
+    parser.add_argument('out_prefix', type=str,
+            help='String to prepend to output file names')
+
+
+    args = parser.parse_args()
+
+    args.jsonl = abspath(args.jsonl)
+    args.graphml = abspath(args.graphml)
+    args.out_loc = abspath(args.out_loc)
+
+    main(args.jsonl, args.graphml, args.search_term, args.out_loc, args.out_prefix)

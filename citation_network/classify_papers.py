@@ -141,11 +141,13 @@ def map_specs_to_kings(species_ids):
             lineage = [t.scientific_name for t in t1.ranked_lineage]
             if lineage[-1] == 'Bacteria' or lineage[-1] == 'Archea':
                 king = defs[lineage[-1]]
+                species_dict[spec_ent] = king
             elif lineage[-1] == 'Eukaryota':
                 try:
                     king = defs[lineage[-2]]
                     if king == 'Opisthokonta':
                         king = defs[lineage[-3]]
+                        species_dict[spec_ent] = king
                 except KeyError:
                     not_tracked_lineage += 1
                     continue
@@ -157,7 +159,6 @@ def map_specs_to_kings(species_ids):
             continue
         except IndexError:
             empty_lineage += 1
-        species_dict[spec_ent] = king
 
     print(f'When building the species --> kingdom dict, {not_tracked_lineage} '
             'species were dropped because their kingdom wasn\'t in our list '
