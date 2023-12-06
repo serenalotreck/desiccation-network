@@ -45,11 +45,11 @@ def main(search_term, out_path, relevance_search, total_results, batch_size, sav
         for offset in tqdm(range(0, total_results, batch_size)):
             if relevance_search:
                 if offset + batch_size == 1000:
-                    query = f'http://api.semanticscholar.org/graph/v1/paper/search?query={search_term}&offset={offset}&limit={batch_size-1}&fields=title,abstract,references,year'
+                    query = f'http://api.semanticscholar.org/graph/v1/paper/search?query={search_term}&offset={offset}&limit={batch_size-1}&fields=title,abstract,references,year,s2FieldsOfStudy'
                 else:
-                    query = f'http://api.semanticscholar.org/graph/v1/paper/search?query={search_term}&offset={offset}&limit={batch_size}&fields=title,abstract,references,year'
+                    query = f'http://api.semanticscholar.org/graph/v1/paper/search?query={search_term}&offset={offset}&limit={batch_size}&fields=title,abstract,references,year,s2FieldsOfStudy'
             else:
-                query = f'https://api.semanticscholar.org/graph/v1/paper/search/bulk/?query={search_term}&offset={offset}&limit={batch_size-1}&fields=title,abstract,references,year'
+                query = f'https://api.semanticscholar.org/graph/v1/paper/search/bulk/?query={search_term}&offset={offset}&limit={batch_size-1}&fields=title,abstract,references,year,s2FieldsOfStudy'
             succeeded = False
             reps = 0
             while not succeeded:
