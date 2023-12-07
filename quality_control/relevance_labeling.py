@@ -12,7 +12,7 @@ import jsonlines
 import pandas as pd
 
 
-def main(jsonl, output_csv):
+def main(jsonl, output_csv, to_pull):
 
     # Read in the data
     print('\nReading in the data...')
@@ -28,9 +28,15 @@ def main(jsonl, output_csv):
 
     # Get the papers to check
     print('\nSampling papers...')
-    num_papers = round(prop*len(data))
-    print(f'Sampling {num_papers} papers.')
-    to_present = sample(data, num_papers)
+    if to_pull == '':
+        num_papers = round(prop*len(data))
+        print(f'Sampling {num_papers} papers.')
+        to_present = sample(data, num_papers)
+    else:
+        print('Pulling sample to reproduce from previous labeling instance...')
+        to_pull_df = pd.read_csv(to_pull, index_col=0)
+        to_present = [p for p in data if p['paperId'] in to_pull_df.index]
+        print(f'{len(to_present)} papers obtained.')
 
     # Start collecting responses
     print('\nYou will now be presented with texts to which to assign relevance. '
@@ -78,10 +84,15 @@ if __name__ == "__main__":
             help='Path to jsonl file for relevance checking')
     parser.add_argument('output_csv', type=str,
             help='Path to save output csv')
+    parser.add_argument('-to_pull', type=str, default='',
+            help='Path to a csv containing paperIds from a previous run, to '
+            'use for the sample')
 
     args = parser.parse_args()
 
     args.jsonl = abspath(args.jsonl)
     args.output_csv = abspath(args.output_csv)
+    if args.to_pull != '':
+        args.to_pull = abspath(args.to_pull)
 
-    main(args.jsonl, args.output_csv)
+    main(args.jsonl, args.output_csv, args.to_pull)
