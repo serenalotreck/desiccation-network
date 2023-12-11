@@ -7,7 +7,7 @@ import argparse
 from os.path import abspath, isfile, splitext
 from os import listdir
 from tqdm import tqdm
-import xml.etree.ElementTree as ET
+from lxml import etree
 import pandas as pd
 import jsonlines
 
@@ -124,30 +124,41 @@ def filter_xml_papers(xml, uids_to_keep):
 
 def main(xml_dir, gui_search, output_jsonl):
 
-    # Read in the XMLs
-    print('\nReading in all XML data...')
-    xmls = []
-    for f in tqdm(listdir(xml_dir)):
-        if isfile(f) and splitext(f)[1] == '.xml':
-            tree = ET.parse(f{xml_dir}/{f})
-            xmls.append(tree)
-
     # Read in the files we want and get UID list
     print('\nReading in search results...')
     search_res = pd.read_csv(gui_search, sep='\t')
     uids_to_keep = search_res['UT'].values.tolist()
-    print(f'There are {len(uids_to_keep)} papers in the search results')
+    years_to_search = list(search_res['PY'].dropna().astype(int).unique())
+    print(years_to_search)
+    print(f'There are {len(uids_to_keep)} papers in the search results. There '
+            f'are {len(years_to_search)} years to examine to find these results.')
+
+    # Read in the XMLs
+    print('\nReading in all XML data...')
+    xmls = {}
+    to_read = []
+    for f in listdir(xml_dir):
+        if isfile(f'{xml_dir}/{f}') and splitext(f)[1] == '.xml':
+            year = int(f.split('_')[1])
+            if year in years_to_search:
+                to_read.append(f)
+    for f in tqdm(to_read):
+        tree = etree.parse(f'{xml_dir}/{f}')
+        xmls[splitext(f)[0]] = tree
+    print(f'After filtering years, there are {len(xmls)} XML files to parse.')
 
     # Do the search
-    print('\nLooking for papers...')
+    print('\nLooking for papers in XML files...')
     all_paper_jsonl = []
-    for docset in tqdm(xmls):
+    for name, docset in tqdm(xmls.items()):
         set_papers = filter_xml_papers(docset, uids_to_keep)
         all_paper_jsonl.extend(set_papers)
+    print(f'{len(all_paper_jsonl)} papers of the requested {len(uids_to_keep)} '
+            'were recovered')
 
     # Save
     print('\nSaving...')
-    with jsonlines.open(output_jsonl) as writer:
+    with jsonlines.open(output_jsonl, 'w') as writer:
         writer.write_all(all_paper_jsonl)
     print(f'Saved output as {output_jsonl}')
 
