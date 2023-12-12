@@ -52,6 +52,7 @@ def convert_xml_paper(paper):
     # UID
     for uid in paper.findall('{http://clarivate.com/schema/wok5.30/public/FullRecord}UID'):
         paper_json['UID'] = uid.text
+        print(f'Converting paper {uid.text}...')
     for static in paper.findall('{http://clarivate.com/schema/wok5.30/public/FullRecord}static_data'):
         for summary in static.findall('{http://clarivate.com/schema/wok5.30/public/FullRecord}summary'):
             # Title
@@ -62,20 +63,23 @@ def convert_xml_paper(paper):
             # Year
             for pub_info in summary.findall('{http://clarivate.com/schema/wok5.30/public/FullRecord}pub_info'):
                 paper_json['year'] = pub_info.attrib['pubyear']
-        # References
-        refs_list = []
         for fullrec in static.findall('{http://clarivate.com/schema/wok5.30/public/FullRecord}fullrecord_metadata'):
+            # References
+            refs_list = []
             for refs in fullrec.findall('{http://clarivate.com/schema/wok5.30/public/FullRecord}references'):
                 for ref in refs:
-                    refs_list.append(convert_xml_reference(ET.ElementTree(ref)))
-        paper_json['references'] = refs_list
+                    refs_list.append(convert_xml_reference(etree.ElementTree(ref)))
+            paper_json['references'] = refs_list
+            # Abstract
+            for abstr in fullrec.findall('{http://clarivate.com/schema/wok5.30/public/FullRecord}abstract'):
+                paper_json['abstract'] = abstr.text
         # Keywords
         static_keys = []
         for fullrec in static.findall('{http://clarivate.com/schema/wok5.30/public/FullRecord}fullrecord_metadata'):
             for category in fullrec.findall('{http://clarivate.com/schema/wok5.30/public/FullRecord}category_info'):
                 for subjects in category.findall('{http://clarivate.com/schema/wok5.30/public/FullRecord}subjects'):
                     for subj in subjects:
-                        static_keys.extend(subj.text.split())
+                        static_keys.append(subj.text)
         paper_json['static_keywords'] = static_keys
         # Dynamic subjects
         ## TODO come back for this
@@ -107,6 +111,7 @@ def filter_xml_papers(xml, uids_to_keep):
         # Check the UID
         for uid in record.findall('{http://clarivate.com/schema/wok5.30/public/FullRecord}UID'):
             if uid.text in uids_to_keep:
+                print('Found a paper to keep!')
                 in_uids = True
         # Check if the paper is in English
         for static in record.findall('{http://clarivate.com/schema/wok5.30/public/FullRecord}static_data'):
@@ -116,8 +121,10 @@ def filter_xml_papers(xml, uids_to_keep):
                         if lang.text == 'English':
                             in_english = True
         # Format
+        if in_uids:
+            print(f'Is it also an English paper?: {in_english}')
         if in_uids and in_english:
-            paper_dict = convert_xml_paper(ET.ElementTree(record))
+            paper_dict = convert_xml_paper(etree.ElementTree(record))
             paper_jsonl.append(paper_dict)
 
     return paper_jsonl
@@ -134,25 +141,21 @@ def main(xml_dir, gui_search, output_jsonl):
             f'are {len(years_to_search)} years to examine to find these results.')
 
     # Read in the XMLs
-    print('\nReading in all XML data...')
-    xmls = {}
+    print('\nReading in XML data and processing...')
     to_read = []
     for f in listdir(xml_dir):
         if isfile(f'{xml_dir}/{f}') and splitext(f)[1] == '.xml':
             year = int(f.split('_')[1])
             if year in years_to_search:
                 to_read.append(f)
-    for f in tqdm(to_read):
-        tree = etree.parse(f'{xml_dir}/{f}')
-        xmls[splitext(f)[0]] = tree
-    print(f'After filtering years, there are {len(xmls)} XML files to parse.')
-
-    # Do the search
-    print('\nLooking for papers in XML files...')
+    print(f'After filtering years, there are {len(to_read)} XML files to parse.')
     all_paper_jsonl = []
-    for name, docset in tqdm(xmls.items()):
-        set_papers = filter_xml_papers(docset, uids_to_keep)
+    for f in tqdm(to_read):
+        print(f'\nChecking XML wtih filename {f}:')
+        tree = etree.parse(f'{xml_dir}/{f}')
+        set_papers = filter_xml_papers(tree, uids_to_keep)
         all_paper_jsonl.extend(set_papers)
+        del tree
     print(f'{len(all_paper_jsonl)} papers of the requested {len(uids_to_keep)} '
             'were recovered')
 
