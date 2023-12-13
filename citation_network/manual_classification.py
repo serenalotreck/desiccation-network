@@ -61,7 +61,10 @@ def main(graphml, output_csv):
                     text = p['title']
             except KeyError:
                 text = p['title']
-            to_classify[p['paperId']] = text
+            try:
+                to_classify[p['paperId']] = text
+            except KeyError:
+                to_classify[p['UID']] = text
 
     print('\nYou will now be presented with text to classify. For each doc, '
             'when prompted, enter P for plant, A for animal, F for fungi, M '

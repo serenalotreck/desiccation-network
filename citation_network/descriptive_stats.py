@@ -152,12 +152,13 @@ def overall_histogram(flattened_papers, search_term, out_loc, out_prefix):
 
     return paper_years
 
-def flatten_papers(papers):
+def flatten_papers(papers, keyname):
     """
     Flatten pulled papers and their data.
 
     parameters:
         papers, list: list of papers to flatten
+        keyname, str: whether to use "paperId" or "UID" to access papers
 
     returns:
         flattened_papers, dict: flattened papers indexed by paperId
@@ -165,20 +166,20 @@ def flatten_papers(papers):
     flattened_papers = {}
     for p in papers:
         try:
-            flattened_papers[p['paperId']] = {'title': p['title'], 'abstract': p['abstract'], 'year': p['year']}
+            flattened_papers[p[keyname]] = {'title': p['title'], 'abstract': p['abstract'], 'year': p['year']}
         except KeyError:
             try:
-                flattened_papers[p['paperId']] = {'title': p['title'], 'year': p['year']}
+                flattened_papers[p[keyname]] = {'title': p['title'], 'year': p['year']}
             except KeyError:
-                flattened_papers[p['paperId']] = {'title': p['title']}
+                flattened_papers[p[keyname]] = {'title': p['title']}
         for r in p['references']:
             try:
-                flattened_papers[r['paperId']] = {'title': r['title'], 'abstract': r['abstract'], 'year': r['year']}
+                flattened_papers[r[keyname]] = {'title': r['title'], 'abstract': r['abstract'], 'year': r['year']}
             except KeyError:
                 try:
-                    flattened_papers[r['paperId']] = {'title': r['title'], 'year': r['year']}
+                    flattened_papers[r[keyname]] = {'title': r['title'], 'year': r['year']}
                 except KeyError:
-                    flattened_papers[r['paperId']] = {'title': r['title']}
+                    flattened_papers[r[keyname]] = {'title': r['title']}
 
     return flattened_papers
 
@@ -192,10 +193,15 @@ def main(jsonl, graphml, search_term, out_loc, out_prefix):
         for obj in reader:
             pulled_papers.append(obj)
     classified_graph = nx.read_graphml(graphml)
+    try:
+        pulled_papers['paperId']
+        keyname = 'paperId']
+    except KeyError:
+        keyname = 'UID'
 
     # Prep the data
     print('\nPreparing the data and performing initial statistics...')
-    flattened_papers = flatten_papers(pulled_papers)
+    flattened_papers = flatten_papers(pulled_papers, keyname)
     paper_classifications = {k: v['study_system'] for k, v in classified_graph.nodes(data=True)}
     print(f'There are {len(flattened_papers)} unique papers in the dataset.')
     classes, flattened, intersection = len(set(paper_classifications)), len(set(flattened_papers.keys())), len(set(flattened_papers.keys()).intersection(set(paper_classifications)))

@@ -322,7 +322,7 @@ def get_species_classes(paper_spec_names, nlp, linker, intermediate_save_path,
             with open(species_id_save_name, 'w') as myf:
                 json.dump(species_ids, myf)
             print(f'Saved species id dictionary as {species_id_save_name}')
-   
+
 
     # Map to kingdoms
     print('Mapping to kingdom classifications...')
@@ -361,7 +361,7 @@ def get_species_names(title, abstract, taxonerd):
     return species
 
 
-def get_unique_papers(search_results):
+def get_unique_papers(search_results, keyname):
     """
     Get unique papers to classify.
 
@@ -374,22 +374,22 @@ def get_unique_papers(search_results):
     """
     to_classify = {}
     for paper in search_results:
-        if (paper['paperId'] not in to_classify.keys()) and (paper['paperId']
+        if (paper[keyname] not in to_classify.keys()) and (paper[keyname]
                                                              is not None):
-            to_classify[paper['paperId']] = {
+            to_classify[paper[keyname]] = {
                 'title': paper['title'],
                 'abstract': paper['abstract']
             }
         for ref in paper['references']:
-            if (ref['paperId'] not in to_classify.keys()) and (ref['paperId']
+            if (ref[keyname] not in to_classify.keys()) and (ref[keyname]
                                                                is not None):
                 try:
-                    to_classify[ref['paperId']] = {
+                    to_classify[ref[keyname]] = {
                         'title': ref['title'],
                         'abstract': ref['abstract']
                     }
                 except KeyError:
-                    to_classify[ref['paperId']] = {
+                    to_classify[ref[keyname]] = {
                         'title': ref['title'],
                         'abstract': None
                     }
@@ -398,13 +398,14 @@ def get_unique_papers(search_results):
     return to_classify
 
 
-def generate_links_without_classification(search_results):
+def generate_links_without_classification(search_results, keyname):
     """
     Generate a list of edges by paper ID from the results of a Semantic Scholar query. Removes malformed
     citations with no paperID.
 
     parameters:
         search_results, dict: query results
+        keyname, str: whether to use 'paperId' or 'UID' to access paper IDs
 
     returns:
         nodes, list of two-tuple: the paper ID and an attribute dictionary containing the paper's title
@@ -413,10 +414,10 @@ def generate_links_without_classification(search_results):
     nodes, edges = [], []
     i = 0
     for paper in tqdm(search_results):
-        citing = (paper['paperId'], {'title': paper['title']})
-        cited = [(p['paperId'], {
+        citing = (paper[keyname], {'title': paper['title']})
+        cited = [(p[keyname], {
             'title': p['title']
-        }) for p in paper['references'] if p['paperId'] is not None]
+        }) for p in paper['references'] if p[keyname] is not None]
         nodes.append(citing)
         nodes.extend(cited)
         edges.extend([(citing[0], p[0], num)
@@ -426,7 +427,8 @@ def generate_links_without_classification(search_results):
 
 
 def generate_links_with_classification(search_results, taxonerd, nlp, linker,
-                                       intermediate_save_path, use_intermed, generic_dict):
+                                       intermediate_save_path, use_intermed,
+                                       generic_dict, keyname):
     """
     Generate a list of edges by paper ID from the results of a Semantic Scholar query. Removes malformed
     citations with no paperID, and classifies nodes by the organisms in their titles.
@@ -442,13 +444,14 @@ def generate_links_with_classification(search_results, taxonerd, nlp, linker,
             the intermediate save path
         generic_dict, dict: keys are generic terms for kingdoms, values are
             kingdoms
+        keyname, str: whether to use 'paperId' or 'UID' to access paper IDs
 
     returns:
         nodes, list of two-tuple: the paper ID and an attribute dictionary containing the paper's title
         edges, list of three-tuple: the paper IDs of both citing and cited paper, and an attribute dictionary with the paper's title
     """
     # Make dict of unique papers for classification
-    to_classify = get_unique_papers(search_results)
+    to_classify = get_unique_papers(search_results, keyname)
 
     # Start timer
     start = time.time()
@@ -512,15 +515,15 @@ def generate_links_with_classification(search_results, taxonerd, nlp, linker,
     nodes, edges = [], []
     i = 0
     for paper in tqdm(search_results):
-        org = classified[paper['paperId']]
-        citing = (paper['paperId'], {
+        org = classified[paper[keyname]]
+        citing = (paper[keyname], {
             'title': paper['title'],
             'study_system': org
         })
-        cited = [(p['paperId'], {
+        cited = [(p[keyname], {
             'title': p['title'],
-            'study_system': classified[p['paperId']]
-        }) for p in paper['references'] if p['paperId'] is not None]
+            'study_system': classified[p[keyname]]
+        }) for p in paper['references'] if p[keyname] is not None]
         nodes.append(citing)
         nodes.extend(cited)
         edges.extend([(citing[0], p[0], num)
@@ -538,6 +541,12 @@ def main(search_result_path, graph_save_path, intermediate_save_path,
         search_results = []
         for obj in reader:
             search_results.append(obj)
+    # Determine which key to use for IDs
+    try:
+        search_results[0]['paperId']
+        keyname = 'paperId'
+    except KeyError:
+        keyname = 'UID'
 
     # Define TaxoNERD model for classification
     if not skip_classification:
@@ -555,11 +564,12 @@ def main(search_result_path, graph_save_path, intermediate_save_path,
     # Get graph nodes and edges
     print('\nFormatting and classifying nodes and edges...')
     if skip_classification:
-        nodes, edges = generate_links_without_classification(search_results)
+        nodes, edges = generate_links_without_classification(search_results,
+                keyname)
     else:
         nodes, edges = generate_links_with_classification(
             search_results, taxonerd, nlp, linker, intermediate_save_path,
-            use_intermed, generic_dict)
+            use_intermed, generic_dict, keyname)
 
     # Build graph
     print('\nBuilding graph...')
