@@ -40,6 +40,12 @@ def update_refs_with_abstracts(all_paper_jsonl, original_search):
                 for r in p['references']:
                     uid_of_ref = r['UID']
                     r['abstract'] = results[uid_of_ref]['abstract']
+                    # Check if we put back a year, if not, add one
+                    if 'year' not in r.keys():
+                        try:
+                            r['year'] = results[uid_of_ref]['year']
+                        except KeyError:
+                            print(f'No year found for paper {uid_of_ref}.')
                     updated_refs.append(r)
                 full_paper_json['references'] = updated_refs
         updated_all_paper_jsonl.append(full_paper_json)
@@ -62,7 +68,6 @@ def convert_xml_reference(ref):
     # UID
     for uid in ref.findall('{http://clarivate.com/schema/wok5.30/public/FullRecord}uid'):
         ref_json['UID'] = uid.text
-        print(f'UID obtained: {uid.text}')
     # Year
     for year in ref.findall('{http://clarivate.com/schema/wok5.30/public/FullRecord}year'):
         ref_json['year'] = year.text
@@ -170,6 +175,7 @@ def filter_xml_papers(xml, uids_to_keep, kind):
                     for lang in langs:
                         if lang.text == 'English':
                             in_english = True
+
         # Format
         if in_uids:
             print(f'Is it also an English paper?: {in_english}')
@@ -180,73 +186,22 @@ def filter_xml_papers(xml, uids_to_keep, kind):
     return paper_jsonl
 
 
-def main(xml_dir, output_jsonl, gui_search, jsonl_to_modify, kind, uid_map):
+def read_and_process_xml(xml_dir, uids_to_keep, to_read, kind, original_search=''):
+    """
+    Reads in XML files one at a time and processes them before purging them from
+    memory.
 
-    # Read in the files we want and get UID list
-    print('\nReading in search results...')
-    if kind == 'full':
-        search_res = pd.read_csv(gui_search, sep='\t')
-        uids_to_keep = search_res['UT'].values.tolist()
-        if uid_map == '':
-            years_to_search = list(search_res['PY'].dropna().astype(int).unique())
-            print(years_to_search)
-    else:
-        with jsonlines.open(jsonl_to_modify) as reader:
-            original_search = []
-            for obj in reader:
-                original_search.append(obj)
-        uids_to_keep = []
-        not_wos = 0
-        total_refs = 0
-        for p in original_search:
-            for r in p['references']:
-                try:
-                        uids_to_keep.append(r['UID'])
-                except KeyError:
-                    print(f'A reference for paper {p["UID"]} was dropped due to '
-                        'missing UID.')
-        all_uid_set_len = len(set(uids_to_keep))
-        uids_to_keep = list(set([uid for uid in uids_to_keep if uid[:4] == 'WOS:']))
-        dropped_len = all_uid_set_len - len(uids_to_keep)
-        print(f'{dropped_len} of {all_uid_set_len} were dropped because they were '
-                'outside of the Core Collection.')
-        uids_to_keep = list(set(uids_to_keep))
-        if uid_map == '':
-            filter_by_year = True
-            try:
-                years_to_search = list(set([int(r['year']) for p in original_search
-                    for r in p['references']]))
-            except KeyError:
-                filter_by_year = False
-                print('One or more references are missing a year, so all XMLs '
-                    'must be searched.')
-    print(f'There are {len(uids_to_keep)} papers in the search results.')
+    parameters:
+        xml_dir, str: path to XML files
+        uids_to_keep, list of str: UIDs to search for
+        to_read, list of str: file paths of XML files to read
+        kind, str: "full" or "ref_only"
+        original_search, list of dict: the json papers to update with reference
+            abstracts
 
-    # Read in the XMLs
-    print('\nReading in XML data and processing...')
-    to_read = []
-    if uid_map == '':
-        if filter_by_year:
-            for f in listdir(xml_dir):
-                if isfile(f'{xml_dir}/{f}') and splitext(f)[1] == '.xml':
-                    year = int(f.split('_')[1])
-                    if year in years_to_search:
-                        to_read.append(f)
-            print(f'After filtering years, there are {len(to_read)} XML files to parse.')
-        else:
-            for f in listdir(xml_dir):
-                if isfile(f'{xml_dir}/{f}') and splitext(f)[1] == '.xml':
-                    to_read.append(f)
-            print(f'Unable to filter by year, there are {len(to_read)} XML to parse.')
-    else:
-        with open(uid_map) as myf:
-            uid_dict = json.load(myf)
-        for uid, fname in uid_dict.items():
-            if uid in uids_to_keep:
-                to_read.append(fname)
-        to_read = list(set(to_read))
-        print(f'After filtering with the UID map, there are {len(to_read)} XML files to parse.')
-
+    returns:
+        all_paper_jsonl, list of dict: updated/formated papers
+    """
     all_paper_jsonl = []
     found = {uid: False for uid in uids_to_keep}
     for f in tqdm(to_read):
@@ -264,6 +219,119 @@ def main(xml_dir, output_jsonl, gui_search, jsonl_to_modify, kind, uid_map):
             'were recovered')
     if kind == 'ref_only':
         all_paper_jsonl = update_refs_with_abstracts(all_paper_jsonl, original_search)
+
+    return all_paper_jsonl
+
+
+def narrow_search_files(xml_dir, uid_source, kind, uid_map):
+    """
+    Use provided information to narrow down the list of which XML files need to
+    be read.
+
+    parameters:
+        xml_dir, str: directory with XML files
+        uid_source, either pd df or list of dict: either search_res or
+            original_search, depending on what kind is
+        kinf, str: either "full" or "ref_only"
+        uid_map, dict: keys are UIDs, values are XML filenames
+
+    returns:
+        to_read, list of str: list of files to read
+        uids_to_keep, list of str: list of UIDs to look for
+    """
+    # Get the UIDs to keep and years if necessary
+    if kind == 'full':
+        uids_to_keep = uid_source['UT'].values.tolist()
+        all_uid_set_len = len(set(uids_to_keep))
+        uids_to_keep = list(set([uid for uid in uids_to_keep if uid[:4] == 'WOS:']))
+        dropped_len = all_uid_set_len - len(uids_to_keep)
+        print(f'{dropped_len} of {all_uid_set_len} were dropped because they were '
+                'outside of the Core Collection.')
+        if uid_map == '':
+            print(uid_source['PY'].unique())
+            years_to_search = list(uid_source['PY'].dropna().astype(int).unique())
+            if len(uid_source['PY'].dropna()) != len(uid_source['PY']):
+                filter_by_year = False
+            else:
+                filter_by_year = True
+            print(years_to_search)
+        print(f'There are {len(uids_to_keep)} papers in the search results.')
+    else:
+        uids_to_keep = []
+        not_wos = 0
+        total_refs = 0
+        for p in uid_source:
+            for r in p['references']:
+                try:
+                        uids_to_keep.append(r['UID'])
+                except KeyError:
+                    print(f'A reference for paper {p["UID"]} was dropped due to '
+                        'missing UID.')
+        all_uid_set_len = len(set(uids_to_keep))
+        uids_to_keep = list(set([uid for uid in uids_to_keep if uid[:4] == 'WOS:']))
+        dropped_len = all_uid_set_len - len(uids_to_keep)
+        print(f'{dropped_len} of {all_uid_set_len} were dropped because they were '
+                'outside of the Core Collection.')
+        uids_to_keep = list(set(uids_to_keep))
+        if uid_map == '':
+            filter_by_year = True
+            try:
+                years_to_search = list(set([int(r['year']) for p in uid_source
+                    for r in p['references']]))
+            except KeyError:
+                filter_by_year = False
+                print('One or more references are missing a year, so all XMLs '
+                    'must be searched.')
+        print(f'There are {len(uids_to_keep)} references in the search results.')
+
+    # Get the names of the files necessary to read to find all papers
+    to_read = []
+    if uid_map == '':
+        if filter_by_year:
+            for f in listdir(xml_dir):
+                if isfile(f'{xml_dir}/{f}') and splitext(f)[1] == '.xml':
+                    year = int(f.split('_')[1])
+                    if year in years_to_search:
+                        to_read.append(f)
+            print(f'After filtering years, there are {len(to_read)} XML files to parse.')
+        else:
+            for f in listdir(xml_dir):
+                if isfile(f'{xml_dir}/{f}') and splitext(f)[1] == '.xml':
+                    to_read.append(f)
+            print(f'Unable to filter by year, there are {len(to_read)} XML to parse.')
+    else:
+        print('\nReading in UID map...')
+        with open(uid_map) as myf:
+            uid_dict = json.load(myf)
+        for uid, fname in uid_dict.items():
+            if uid in uids_to_keep:
+                to_read.append(fname)
+        to_read = list(set(to_read))
+        print(f'After filtering with the UID map, there are {len(to_read)} XML files to parse.')
+
+    return to_read, uids_to_keep
+
+
+def main(xml_dir, output_jsonl, gui_search, jsonl_to_modify, kind, uid_map):
+
+    # Read in the files we want and get UID list
+    print('\nReading in search results...')
+    if kind == 'full':
+        search_res = pd.read_csv(gui_search, sep='\t')
+        to_read, uids_to_keep = narrow_search_files(xml_dir, search_res, kind, uid_map)
+    else:
+        with jsonlines.open(jsonl_to_modify) as reader:
+            original_search = []
+            for obj in reader:
+                original_search.append(obj)
+        to_read, uids_to_keep = narrow_search_files(xml_dir, original_search, kind, uid_map)
+
+    # Read in the XMLs
+    print('\nReading in XML data and processing...')
+    if kind == 'full':
+        all_paper_jsonl = read_and_process_xml(xml_dir, uids_to_keep, to_read, kind)
+    else:
+        all_paper_jsonl = read_and_process_xml(xml_dir, uids_to_keep, to_read, kind, original_search)
 
     # Save
     print('\nSaving...')
