@@ -21,6 +21,13 @@ def main(jsonl, output_csv, to_pull):
         for obj in reader:
             data.append(obj)
 
+    # Get the paper ID key to use
+    try:
+        _ = data[0]['paperId']
+        key_for_id = 'paperId'
+    except KeyError:
+        key_for_id = 'UID'
+
     # Define proportion to assign relevance
     print(f'There are {len(data)} papers in the search results.')
     prop = float(input('Give the proportion of these papers you want to examine: '))
@@ -35,7 +42,7 @@ def main(jsonl, output_csv, to_pull):
     else:
         print('Pulling sample to reproduce from previous labeling instance...')
         to_pull_df = pd.read_csv(to_pull, index_col=0)
-        to_present = [p for p in data if p['paperId'] in to_pull_df.index]
+        to_present = [p for p in data if p[key_for_id] in to_pull_df.index]
         print(f'{len(to_present)} papers obtained.')
 
     # Start collecting responses
@@ -53,7 +60,7 @@ def main(jsonl, output_csv, to_pull):
             text = paper['title']
         except KeyError:
             text = paper['title']
-        print(f'\nPaper number: {paper_number}, paperId: {paper["paperId"]}')
+        print(f'\nPaper number: {paper_number}, paperId: {paper[key_for_id]}')
         print(text)
         labeled = False
         while not labeled:
@@ -62,7 +69,7 @@ def main(jsonl, output_csv, to_pull):
                 print('Invalid label, please try again.')
             else:
                 labeled = True
-        relevances[paper['paperId']] = lab
+        relevances[paper[key_for_id]] = lab
         paper_number += 1
 
     # Save results
