@@ -195,7 +195,7 @@ def main(jsonl, graphml, search_term, out_loc, out_prefix):
     classified_graph = nx.read_graphml(graphml)
     try:
         pulled_papers['paperId']
-        keyname = 'paperId']
+        keyname = 'paperId'
     except KeyError:
         keyname = 'UID'
 
