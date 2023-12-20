@@ -29,9 +29,10 @@ def main(jsonl, output_csv, to_pull):
         key_for_id = 'UID'
 
     # Define proportion to assign relevance
-    print(f'There are {len(data)} papers in the search results.')
-    prop = float(input('Give the proportion of these papers you want to examine: '))
-    assert 0 <= prop <= 1, ('Must be a number between 0 and 1, please try again')
+    if to_pull == '':
+        print(f'There are {len(data)} papers in the search results.')
+        prop = float(input('Give the proportion of these papers you want to examine: '))
+        assert 0 <= prop <= 1, ('Must be a number between 0 and 1, please try again')
 
     # Get the papers to check
     print('\nSampling papers...')
@@ -48,9 +49,7 @@ def main(jsonl, output_csv, to_pull):
     # Start collecting responses
     print('\nYou will now be presented with texts to which to assign relevance. '
             'For each text, type Y if the paper is relevant to the task, and '
-            'type N if it is not. If unsure, for example, if a paper has only '
-            'a title and no abstract and the title is not clear, please label '
-            'as M (for "maybe").')
+            'type N if it is not.')
     relevances = {}
     paper_number = 0
     for paper in to_present:
@@ -64,8 +63,8 @@ def main(jsonl, output_csv, to_pull):
         print(text)
         labeled = False
         while not labeled:
-            lab = input('Is this paper relevant? Y, N or M: ')
-            if lab not in ['Y', 'N', 'M']:
+            lab = input('Is this paper relevant? Y or N: ')
+            if lab not in ['Y', 'N']:
                 print('Invalid label, please try again.')
             else:
                 labeled = True
