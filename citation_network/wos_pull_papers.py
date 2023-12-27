@@ -11,6 +11,9 @@ from lxml import etree
 import pandas as pd
 import jsonlines
 import json
+from multiprocessing import Pool, cpu_count
+from math import ceil
+import time
 
 
 def update_refs_with_abstracts(all_paper_jsonl, original_search):
@@ -186,7 +189,7 @@ def filter_xml_papers(xml, uids_to_keep, kind):
     return paper_jsonl
 
 
-def read_and_process_xml(xml_dir, uids_to_keep, to_read, kind, original_search=''):
+def read_and_process_xml(xml_dir, uids_to_keep, to_read, kind):
     """
     Reads in XML files one at a time and processes them before purging them from
     memory.
@@ -196,8 +199,6 @@ def read_and_process_xml(xml_dir, uids_to_keep, to_read, kind, original_search='
         uids_to_keep, list of str: UIDs to search for
         to_read, list of str: file paths of XML files to read
         kind, str: "full" or "ref_only"
-        original_search, list of dict: the json papers to update with reference
-            abstracts
 
     returns:
         all_paper_jsonl, list of dict: updated/formated papers
@@ -215,10 +216,6 @@ def read_and_process_xml(xml_dir, uids_to_keep, to_read, kind, original_search='
             found[uid] = True
         if all(value for value in found.values()):
             break
-    print(f'{len(all_paper_jsonl)} papers of the requested {len(uids_to_keep)} '
-            'were recovered')
-    if kind == 'ref_only':
-        all_paper_jsonl = update_refs_with_abstracts(all_paper_jsonl, original_search)
 
     return all_paper_jsonl
 
@@ -270,8 +267,13 @@ def narrow_search_files(xml_dir, uid_source, kind, uid_map):
         all_uid_set_len = len(set(uids_to_keep))
         uids_to_keep = list(set([uid for uid in uids_to_keep if uid[:4] == 'WOS:']))
         dropped_len = all_uid_set_len - len(uids_to_keep)
-        print(f'{dropped_len} of {all_uid_set_len} were dropped because they were '
-                'outside of the Core Collection.')
+        print(f'{dropped_len} of {all_uid_set_len} were dropped because their '
+                'prefixes were outside of the Core Collection.')
+        only_wos_set_len = len(uids_to_keep)
+        uids_to_keep = list(set([uid for uid in uids_to_keep if len(uid.split('.')) == 1]))
+        print(f'An additional {only_wos_set_len - len(uids_to_keep)} were '
+                'dropped because their UIDs were derived from the citing paper '
+                '(i.e. the reference is not in any WOS collection)')
         uids_to_keep = list(set(uids_to_keep))
         if uid_map == '':
             filter_by_year = True
@@ -282,7 +284,7 @@ def narrow_search_files(xml_dir, uid_source, kind, uid_map):
                 filter_by_year = False
                 print('One or more references are missing a year, so all XMLs '
                     'must be searched.')
-        print(f'There are {len(uids_to_keep)} references in the search results.')
+        print(f'There are {len(uids_to_keep)} unique references in the search results.')
 
     # Get the names of the files necessary to read to find all papers
     to_read = []
@@ -303,16 +305,22 @@ def narrow_search_files(xml_dir, uid_source, kind, uid_map):
         print('\nReading in UID map...')
         with open(uid_map) as myf:
             uid_dict = json.load(myf)
-        for uid, fname in uid_dict.items():
-            if uid in uids_to_keep:
-                to_read.append(fname)
+        print('Choosing filenames to read...')
+        suspiciously_missing = []
+        for uid in tqdm(uids_to_keep):
+            try:
+                to_read.append(uid_dict[uid])
+            except KeyError:
+                suspiciously_missing.append(uid)
+        print(f'There are {len(suspiciously_missing)} suspiciously missing UIDs')
         to_read = list(set(to_read))
         print(f'After filtering with the UID map, there are {len(to_read)} XML files to parse.')
 
     return to_read, uids_to_keep
 
 
-def main(xml_dir, output_jsonl, gui_search, jsonl_to_modify, kind, uid_map):
+def main(xml_dir, output_jsonl, gui_search, jsonl_to_modify, kind, uid_map,
+        parallelize):
 
     # Read in the files we want and get UID list
     print('\nReading in search results...')
@@ -328,10 +336,24 @@ def main(xml_dir, output_jsonl, gui_search, jsonl_to_modify, kind, uid_map):
 
     # Read in the XMLs
     print('\nReading in XML data and processing...')
-    if kind == 'full':
-        all_paper_jsonl = read_and_process_xml(xml_dir, uids_to_keep, to_read, kind)
+    if parallelize:
+        len_to_reads = (len(to_read)//cpu_count()) + 1
+        to_reads = [to_read[i:i+len_to_reads] for i in range(0, len(to_read), len_to_reads)]
+        with Pool(cpu_count()) as pool:
+            result = pool.starmap(read_and_process_xml, [(xml_dir,
+                uids_to_keep, this_read, kind) for this_read in to_reads])
+            all_paper_jsonl = [paper for subset in result for
+                    paper in subset]
+        print(f'{len(all_paper_jsonl)} papers of the requested {len(uids_to_keep)} '
+                'were recovered')
+        if kind == 'ref_only':
+            all_paper_jsonl = update_refs_with_abstracts(all_paper_jsonl, original_search)
     else:
-        all_paper_jsonl = read_and_process_xml(xml_dir, uids_to_keep, to_read, kind, original_search)
+        all_paper_jsonl = read_and_process_xml(xml_dir, uids_to_keep, to_read, kind)
+        print(f'{len(all_paper_jsonl)} papers of the requested {len(uids_to_keep)} '
+                'were recovered')
+        if kind == 'ref_only':
+            all_paper_jsonl = update_refs_with_abstracts(all_paper_jsonl, original_search)
 
     # Save
     print('\nSaving...')
@@ -358,7 +380,8 @@ if __name__ == "__main__":
     parser.add_argument('-jsonl_to_modify', type=str, default='',
             help='Jsonl from an initial XML pull, refence abstracts to be '
                 'retrieved')
-
+    parser.add_argument('--parallelize', action='store_true',
+            help='Whether or not to retreive articles in parallel')
 
     args = parser.parse_args()
 
@@ -382,6 +405,11 @@ if __name__ == "__main__":
     if args.uid_map != '':
         args.uid_map = abspath(args.uid_map)
 
-    main(args.xml_dir, args.output_jsonl, args.gui_search, args.jsonl_to_modify,
-            kind, args.uid_map)
+    if args.parallelize:
+        print('\nParallelization has been requested. There are '
+                f'{cpu_count()} available CPUs for this task.')
 
+    start = time.time()
+    main(args.xml_dir, args.output_jsonl, args.gui_search, args.jsonl_to_modify,
+            kind, args.uid_map, args.parallelize)
+    print(f'\n\n\nThe entire script took {time.time() - start} seconds to run.')
