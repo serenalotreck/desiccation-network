@@ -4,7 +4,7 @@ Classifies nodes ina citation network by study organism.
 Author: Serena G. Lotreck
 """
 import argparse
-from os.path import abspath
+from os.path import abspath, splitext
 from os import listdir
 import json
 import jsonlines
@@ -18,6 +18,42 @@ import networkx as nx
 import time
 import regex
 from math import ceil
+
+
+def build_graph(search_results, classified):
+    """
+    Get nodes and edges and build GraphML.
+
+    parameters:
+        search_results
+        classified, dict: keys are UID/paperIds, values are kingdoms
+
+    returns:
+        citenet, MultiDiGraph: citation network
+    """
+    nodes, edges = [], []
+    i = 0
+    for paper in tqdm(search_results):
+        org = classified[paper[keyname]]
+        citing = (paper[keyname], {
+            'title': paper['title'],
+            'study_system': org
+        })
+        cited = [(p[keyname], {
+            'title': p['title'],
+            'study_system': classified[p[keyname]]
+        }) for p in paper['references'] if p[keyname] is not None]
+        nodes.append(citing)
+        nodes.extend(cited)
+        edges.extend([(citing[0], p[0], num)
+                      for num, p in enumerate(cited, i)])
+        i += len(cited)
+
+    citenet = nx.MultiDiGraph()
+    _ = citenet.add_nodes_from(nodes)
+    _ = citenet.add_edges_from(edges)
+
+    return citenet
 
 
 def fuzzy_match_kingdoms(paper_dict, generic_dict):
@@ -361,12 +397,14 @@ def get_species_names(title, abstract, taxonerd):
     return species
 
 
-def get_unique_papers(search_results, keyname):
+def get_unique_papers(search_results, keyname, main_results_only):
     """
     Get unique papers to classify.
 
     parameters:
         search_results, list of dict: search results to parse
+        keyname, str: whether to use UID or paperID to get papers
+        main_results_only, bool: whether or not to exclude references
 
     returns:
         to_classify, dict: keys are paperIds, values are dict with title and
@@ -380,19 +418,20 @@ def get_unique_papers(search_results, keyname):
                 'title': paper['title'],
                 'abstract': paper['abstract']
             }
-        for ref in paper['references']:
-            if (ref[keyname] not in to_classify.keys()) and (ref[keyname]
-                                                               is not None):
-                try:
-                    to_classify[ref[keyname]] = {
-                        'title': ref['title'],
-                        'abstract': ref['abstract']
-                    }
-                except KeyError:
-                    to_classify[ref[keyname]] = {
-                        'title': ref['title'],
-                        'abstract': None
-                    }
+        if not main_results_only:
+            for ref in paper['references']:
+                if (ref[keyname] not in to_classify.keys()) and (ref[keyname]
+                                                                   is not None):
+                    try:
+                        to_classify[ref[keyname]] = {
+                            'title': ref['title'],
+                            'abstract': ref['abstract']
+                        }
+                    except KeyError:
+                        to_classify[ref[keyname]] = {
+                            'title': ref['title'],
+                            'abstract': None
+                        }
 
     print(f'There are {len(to_classify)} unique papers to classify.')
     return to_classify
@@ -426,9 +465,9 @@ def generate_links_without_classification(search_results, keyname):
     return nodes, edges
 
 
-def generate_links_with_classification(search_results, taxonerd, nlp, linker,
+def generate_classified_dict(search_results, taxonerd, nlp, linker,
                                        intermediate_save_path, use_intermed,
-                                       generic_dict, keyname):
+                                       generic_dict, keyname, main_results_only):
     """
     Generate a list of edges by paper ID from the results of a Semantic Scholar query. Removes malformed
     citations with no paperID, and classifies nodes by the organisms in their titles.
@@ -445,13 +484,13 @@ def generate_links_with_classification(search_results, taxonerd, nlp, linker,
         generic_dict, dict: keys are generic terms for kingdoms, values are
             kingdoms
         keyname, str: whether to use 'paperId' or 'UID' to access paper IDs
+        main_results_only, bool: whether or not to exclude references
 
     returns:
-        nodes, list of two-tuple: the paper ID and an attribute dictionary containing the paper's title
-        edges, list of three-tuple: the paper IDs of both citing and cited paper, and an attribute dictionary with the paper's title
+        classified, dict: keys are UID/paperIds, values are classifications
     """
     # Make dict of unique papers for classification
-    to_classify = get_unique_papers(search_results, keyname)
+    to_classify = get_unique_papers(search_results, keyname, main_results_only)
 
     # Start timer
     start = time.time()
@@ -511,31 +550,59 @@ def generate_links_with_classification(search_results, taxonerd, nlp, linker,
         f'Time to get the classification of entities from all papers: {time.time() - start: .2f}'
     )
 
-    # Map the classifications back to original data structure
-    nodes, edges = [], []
-    i = 0
-    for paper in tqdm(search_results):
-        org = classified[paper[keyname]]
-        citing = (paper[keyname], {
-            'title': paper['title'],
-            'study_system': org
-        })
-        cited = [(p[keyname], {
-            'title': p['title'],
-            'study_system': classified[p[keyname]]
-        }) for p in paper['references'] if p[keyname] is not None]
-        nodes.append(citing)
-        nodes.extend(cited)
-        edges.extend([(citing[0], p[0], num)
-                      for num, p in enumerate(cited, i)])
-        i += len(cited)
-    return nodes, edges
+    return classified
 
 
-def main(search_result_path, graph_save_path, intermediate_save_path,
-        use_intermed, generic_dict, prefer_gpu, skip_classification):
+def clean_input_data(search_results, keyname):
+    """
+    Get rid of documents that don't have both title and abstracts. If a main
+    result paper doens't have an abstract, it and all of its references will be
+    removed from the dataset.
 
-    # Read in search results
+    parameters:
+        search_results, list of dict: papers
+        keyname, str: whether to use UID or paperID to get papers
+
+    returns:
+        clean_search_results, list of dict: cleaned search results
+    """
+    clean_search_results = []
+    mains_dropped = []
+    refs_dropped = []
+    for res in search_results:
+        try:
+            if res['abstract'] is not None:
+                updated_refs = []
+                for ref in res['references']:
+                    try:
+                        if ref['abstract'] is not None:
+                            updated_refs.append(ref)
+                    except KeyError:
+                        refs_dropped.append(ref[keyname])
+                res['references'] = updated_refs
+            clean_search_results.append(res)
+        except KeyError:
+            mains_dropped.append(res[keyname])
+            this_ref_dropped = []
+            for ref in res['references']:
+                try:
+                    this_ref_dropped.append(ref[keyname])
+                except KeyError:
+                    this_ref_dropped.append(f'no_uid_{res[keyname]}')
+            refs_dropped.extend(this_ref_dropped)
+
+    print(f'{len(set(mains_dropped))} main results of {len(search_results)} '
+        'were dropped due to missing an abstract, and '
+        f'{len(set(refs_dropped))} unique references were dropped.')
+
+    return clean_search_results
+
+
+def main(search_result_path, output_save_path, intermediate_save_path,
+        use_intermed, generic_dict, prefer_gpu, skip_classification,
+        main_results_only):
+
+    # Read in search results and clean
     print('\nLoading citation data...')
     with jsonlines.open(search_result_path) as reader:
         search_results = []
@@ -547,6 +614,8 @@ def main(search_result_path, graph_save_path, intermediate_save_path,
         keyname = 'paperId'
     except KeyError:
         keyname = 'UID'
+    print('\nCleaning input data...')
+    search_results = clean_input_data(search_results, keyname)
 
     # Define TaxoNERD model for classification
     if not skip_classification:
@@ -561,26 +630,43 @@ def main(search_result_path, graph_save_path, intermediate_save_path,
                               resolve_abbreviations=False)
         print(f'Time to load linker: {time.time() - start: .2f}')
 
-    # Get graph nodes and edges
-    print('\nFormatting and classifying nodes and edges...')
-    if skip_classification:
-        nodes, edges = generate_links_without_classification(search_results,
-                keyname)
-    else:
-        nodes, edges = generate_links_with_classification(
+    # Get classifications and/or network
+    if not skip_classification:
+        print('\nClassifying papers...')
+        classified = generate_classified_dict(
             search_results, taxonerd, nlp, linker, intermediate_save_path,
-            use_intermed, generic_dict, keyname)
-
-    # Build graph
-    print('\nBuilding graph...')
-    citenet = nx.MultiDiGraph()
-    _ = citenet.add_nodes_from(nodes)
-    _ = citenet.add_edges_from(edges)
-
-    # Save graph
-    print('\nSaving graph...')
-    nx.write_graphml(citenet, graph_save_path)
-    print(f'Graph saved to {graph_save_path}')
+            use_intermed, generic_dict, keyname, main_results_only)
+        # Map the classifications back to requested data structure and save
+        if not main_results_only:
+            print('\nBuilding graph...')
+            citenet = build_graph(search_results, classified)
+            # Save graph
+            print('\nSaving graph...')
+            nx.write_graphml(citenet, output_save_path)
+            print(f'Graph saved to {output_save_path}')
+        else:
+            print('\nMapping classifications back to jsonl...')
+            for res in search_results:
+                res['study_system'] = classified[res[keyname]]
+            print('\nSaving results...')
+            with jsonlines.open(output_save_path) as writer:
+                writer.write_all(search_results)
+            print(f'Results saved to {output_save_path}')
+    else:
+        if not main_results_only:
+            print('\nFormatting citation network without classification...')
+            nodes, edges = generate_links_without_classification(search_results,
+                    keyname)
+            citenet = nx.MultiDiGraph()
+            _ = citenet.add_nodes_from(nodes)
+            _ = citenet.add_edges_from(edges)
+            # Save graph
+            print('\nSaving graph...')
+            nx.write_graphml(citenet, output_save_path)
+            print(f'Graph saved to {output_save_path}')
+        else:
+            assert not main_results_only, ('Cannot return a citation network '
+                    'if main_results_only is specified, please try again.')
 
     print('\nDone!')
 
@@ -593,9 +679,11 @@ if __name__ == '__main__':
     parser.add_argument('search_result_path',
                         type=str,
                         help='Output from pull_papers.py')
-    parser.add_argument('graph_save_path',
+    parser.add_argument('output_save_path',
                         type=str,
-                        help='Path to save graph, extension is .graphml')
+                        help='Path to save graph, extension is .graphml if '
+                        'a graph is requested, .jsonl if --main_results_only '
+                        'is specified.')
     parser.add_argument('-intermediate_save_path', type=str, default='',
                         help='Path to directory to save intermediate results, '
                         'which can be used to re-start this script from the '
@@ -614,18 +702,28 @@ if __name__ == '__main__':
     parser.add_argument('--skip_classification',
                         action='store_true',
                         help='Build the graph without node classification')
+    parser.add_argument('--main_results_only', action='store_true',
+                        help='Ignore references and return result as a jsonl')
 
     args = parser.parse_args()
 
     args.search_result_path = abspath(args.search_result_path)
-    args.graph_save_path = abspath(args.graph_save_path)
+    args.output_save_path = abspath(args.output_save_path)
     if args.intermediate_save_path != '':
         args.intermediate_save_path = abspath(args.intermediate_save_path)
     if args.generic_dict != '':
         args.generic_dict = abspath(args.generic_dict)
         with open(args.generic_dict) as myf:
             generic_dict = json.load(myf)
+    if args.main_results_only:
+        assert splitext(args.output_save_path)[1] == '.jsonl', (
+                'Extension for output_save_path must be .jsonl if '
+                '--main_results_only is specified, please try again.')
+    else:
+        assert splitext(args.output_save_path)[1] == '.graphml', (
+                'Extension for output_save_path must be .graphml if '
+                '--main_results_only is not specified, please try again.')
 
-    main(args.search_result_path, args.graph_save_path,
+    main(args.search_result_path, args.output_save_path,
             args.intermediate_save_path, args.use_intermed, generic_dict,
-         args.prefer_gpu, args.skip_classification)
+         args.prefer_gpu, args.skip_classification, args.main_results_only)

@@ -11,6 +11,8 @@
 	"Sorghum": "Plant",
 	"Soybean": "Plant",
 	"Wheat": "Plant",
+	"Rice": "Plant",
+	"Arabidopsis": "Plant",
 	"Tardigrade": "Animal",
 	"Nematode": "Animal",
 	"Roundworm": "Animal",

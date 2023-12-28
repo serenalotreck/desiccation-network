@@ -42,7 +42,10 @@ def update_refs_with_abstracts(all_paper_jsonl, original_search):
                 updated_refs = []
                 for r in p['references']:
                     uid_of_ref = r['UID']
-                    r['abstract'] = results[uid_of_ref]['abstract']
+                    try:
+                        r['abstract'] = results[uid_of_ref]['abstract']
+                    except KeyError:
+                        print(f'No abstract found for reference {uid_of_ref}')
                     # Check if we put back a year, if not, add one
                     if 'year' not in r.keys():
                         try:
