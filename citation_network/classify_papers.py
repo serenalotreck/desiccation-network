@@ -649,7 +649,7 @@ def main(search_result_path, output_save_path, intermediate_save_path,
             for res in search_results:
                 res['study_system'] = classified[res[keyname]]
             print('\nSaving results...')
-            with jsonlines.open(output_save_path) as writer:
+            with jsonlines.open(output_save_path, 'w') as writer:
                 writer.write_all(search_results)
             print(f'Results saved to {output_save_path}')
     else:
