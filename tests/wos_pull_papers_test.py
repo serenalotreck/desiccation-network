@@ -298,6 +298,9 @@ def paper_json_with_refs():
         "This study was carried out in Karaj, Iran in 2017 and 2018 to assess the efficacy of summer sowing (June 22) versus spring sowing (April 20) of six sugar beet genotypes at three harvest times (October 13, November 2, and November 23) via the measurement of catalase (CAT), malondialdehyde (MDA), and agronomic traits. Results showed that in both sowing dates, higher growth and temperature were related to higher CAT activity and MDA content, and the maximum MDA and CAT activity were observed in 1700-1900 growth degree days (GDD). Genotypes responded to the shortening of the growth period differently. The best genotypes for summer sowing were found to be 'Paya', 'IR7', and 'Pars' when a combination of the least response to delayed sowing and the highest root yield in the summer sowing conditions was considered. Compared to the spring sowing, the summer sowing decreased white sugar yield (WSY) of all cultivars by 28.3-50.5% in the first year and 5.3-32.4% in the second year. 'Paya' and 'IR7' were the most capable cultivars in preserving WSY so that they maintained 70% of their yields. In addition, the genotypes exhibited their highest WSY at the November 23 harvest date so that root, raw sugar and white sugar yields were 41.21, 6.35 and 5.02 t ha(-1) higher at the November 23 harvest date than at the October 13 harvest date, respectively. Based on the results, if summer-sown sugar beets are considered as a cash crop in rotation with grains and there is no limitation on water supply, it can then be recommended to farmers as it can make good profits for them.",
         'year':
         '2021',
+        'paper_keywords': [
+            'CAT', 'MDA', 'root yield', 'sugar yield', 'WUE'
+            ],
         'references': [{
             'UID': 'WOS:000288170900008',
             'title':
@@ -330,7 +333,7 @@ def paper_json_with_refs():
             'year': '2018'
         }],
         'dynamic_keys': ['Chemistry', 'Membrane Science', 'Sugar Beet'],
-        'static_keywords': ['Agriculture, Multidisciplinary', 'Agriculture']
+        'static_keys': ['Agriculture, Multidisciplinary', 'Agriculture']
     }
 
 
@@ -344,7 +347,10 @@ def paper_json_as_reference():
         "This study was carried out in Karaj, Iran in 2017 and 2018 to assess the efficacy of summer sowing (June 22) versus spring sowing (April 20) of six sugar beet genotypes at three harvest times (October 13, November 2, and November 23) via the measurement of catalase (CAT), malondialdehyde (MDA), and agronomic traits. Results showed that in both sowing dates, higher growth and temperature were related to higher CAT activity and MDA content, and the maximum MDA and CAT activity were observed in 1700-1900 growth degree days (GDD). Genotypes responded to the shortening of the growth period differently. The best genotypes for summer sowing were found to be 'Paya', 'IR7', and 'Pars' when a combination of the least response to delayed sowing and the highest root yield in the summer sowing conditions was considered. Compared to the spring sowing, the summer sowing decreased white sugar yield (WSY) of all cultivars by 28.3-50.5% in the first year and 5.3-32.4% in the second year. 'Paya' and 'IR7' were the most capable cultivars in preserving WSY so that they maintained 70% of their yields. In addition, the genotypes exhibited their highest WSY at the November 23 harvest date so that root, raw sugar and white sugar yields were 41.21, 6.35 and 5.02 t ha(-1) higher at the November 23 harvest date than at the October 13 harvest date, respectively. Based on the results, if summer-sown sugar beets are considered as a cash crop in rotation with grains and there is no limitation on water supply, it can then be recommended to farmers as it can make good profits for them.",
         'year': '2021',
         'dynamic_keys': ['Chemistry', 'Membrane Science', 'Sugar Beet'],
-        'static_keywords': ['Agriculture, Multidisciplinary', 'Agriculture']
+        'static_keys': ['Agriculture, Multidisciplinary', 'Agriculture'],
+        'paper_keywords': [
+            'CAT', 'MDA', 'root yield', 'sugar yield', 'WUE'
+            ]
     }
 
 

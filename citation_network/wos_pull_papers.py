@@ -173,8 +173,10 @@ def convert_xml_paper(paper, kind):
                         for a in ab:
                             abstract_list.append(a.text)
                 paper_json['abstract'] = ' '.join(abstract_list)
-        # Keywords
+
+        # Static subjects and paper keywords
         static_keys = []
+        paper_keywords = []
         for fullrec in static.findall(
                 '{http://clarivate.com/schema/wok5.30/public/FullRecord}fullrecord_metadata'
         ):
@@ -186,7 +188,12 @@ def convert_xml_paper(paper, kind):
                 ):
                     for subj in subjects:
                         static_keys.append(subj.text)
-        paper_json['static_keywords'] = static_keys
+            for keywords in fullrec.findall('{http://clarivate.com/schema/wok5.30/public/FullRecord}keywords'):
+                for keyword in keywords:
+                    paper_keywords.append(keyword.text)
+        paper_json['static_keys'] = static_keys
+        paper_json['paper_keywords'] = paper_keywords
+
         # Dynamic subjects
         dynamic_keys = []
         for dynamo in paper.findall(
