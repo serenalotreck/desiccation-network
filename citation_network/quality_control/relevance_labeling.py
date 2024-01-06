@@ -12,7 +12,7 @@ import jsonlines
 import pandas as pd
 
 
-def main(jsonl, output_csv, to_pull):
+def main(jsonl, output_csv, to_pull, to_unify):
 
     # Read in the data
     print('\nReading in the data...')
@@ -45,11 +45,19 @@ def main(jsonl, output_csv, to_pull):
         to_pull_df = pd.read_csv(to_pull, index_col=0)
         to_present = [p for p in data if p[key_for_id] in to_pull_df.index]
         print(f'{len(to_present)} papers obtained.')
+        if to_unify != '':
+            to_unify_df = pd.read_csv(to_unify, index_col=0)
 
     # Start collecting responses
-    print('\nYou will now be presented with texts to which to assign relevance. '
-            'For each text, type Y if the paper is relevant to the task, and '
-            'type N if it is not.')
+    if to_unify == '':
+        print('\nYou will now be presented with texts to which to assign relevance. '
+                'For each text, type Y if the paper is relevant to the task, and '
+                'type N if it is not.')
+    else:
+        print('\nYou will now be presented with texts, as well as two labels, '
+                'each assigned by a different annotator. Your task is to '
+                'decide which label is correct, and type that label when '
+                'prompted.')
     relevances = {}
     paper_number = 0
     for paper in to_present:
@@ -63,6 +71,14 @@ def main(jsonl, output_csv, to_pull):
         print(text)
         labeled = False
         while not labeled:
+            if to_unify != '':
+                ann1 = to_pull_df.loc[paper[key_for_id], 'relevant']
+                ann2 = to_unify_df.loc[paper[key_for_id], 'relevant']
+                if ann1 == ann2:
+                    lab = ann1
+                    labeled = True
+                    continue
+                print(f'\nAnnotator 1: {ann1}, Annotator 2: {ann2}')
             lab = input('Is this paper relevant? Y or N: ')
             if lab not in ['Y', 'N']:
                 print('Invalid label, please try again.')
@@ -93,12 +109,21 @@ if __name__ == "__main__":
     parser.add_argument('-to_pull', type=str, default='',
             help='Path to a csv containing paperIds from a previous run, to '
             'use for the sample')
+    parser.add_argument('-to_unify', type=str, default='',
+            help='An additional csv to to_pull, use to unify two sets of '
+            'annotations')
 
     args = parser.parse_args()
 
     args.jsonl = abspath(args.jsonl)
     args.output_csv = abspath(args.output_csv)
+
+    if args.to_unify != '':
+        assert args.to_pull != '', ('If to_unify is provided, a second '
+                    'annotation file must be provided in to_pull')
+        args.to_unify = abspath(args.to_unify)
+
     if args.to_pull != '':
         args.to_pull = abspath(args.to_pull)
 
-    main(args.jsonl, args.output_csv, args.to_pull)
+    main(args.jsonl, args.output_csv, args.to_pull, args.to_unify)
