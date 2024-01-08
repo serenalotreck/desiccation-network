@@ -12,6 +12,12 @@ import spacy
 import string
 import random
 
+################################### clean_input_data ##########################
+## TODO write a test: I caught a bug in this function via the print statement
+## and fixed it when I refactored/rewrote the function -- still not sure what it
+## was. Need to write a test here to make sure there aren't other weird edge case
+## failures that could happen for other inputs
+
 
 ################################# get_unique_papers ###########################
 

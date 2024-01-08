@@ -93,3 +93,100 @@ def test_calculate_dyadic_citation_freqs(input_graph, dyadic_output):
     result = utils.calculate_dyadic_citation_freqs(input_graph)
 
     assert result == dyadic_output
+
+
+############################### prune_jsonl ####################################
+
+
+@pytest.fixture
+def input_jsonl():
+    return [{
+        'UID':
+        'paper1',
+        'title':
+        'paper1 is cool',
+        'references': [{
+            'UID': 'paper2',
+            'title': 'paper2 is cool'
+        }, {
+            'UID': 'ref1',
+            'title': 'ref1 is cool'
+        }, {
+            'UID': 'ref2',
+            'title': 'ref2 is cool'
+        }, {
+            'UID': 'ref3',
+            'title': 'ref3 is cool'
+        }]
+    }, {
+        'UID':
+        'paper2',
+        'title':
+        'paper2 is cool',
+        'abstract': 'Paper2 is about B',
+        'references': [{
+            'UID': 'ref1',
+            'title': 'ref1 is cool'
+        }, {
+            'UID': 'ref2',
+            'title': 'ref2 is cool'
+        }, {
+            'UID': 'ref3',
+            'title': 'ref3 is cool'
+        }]
+    }, {
+        'UID':
+        'paper3',
+        'title':
+        'paper3 is cool',
+        'abstract':
+        'Paper3 is about C',
+        'references': [{
+            'UID': 'paper1',
+            'title': 'paper1 is cool'
+        }, {
+            'UID': 'paper2',
+            'title': 'paper2 is cool'
+        }]
+    }]
+
+
+@pytest.fixture
+def output_jsonl():
+    return [{
+        'UID': 'paper1',
+        'title': 'paper1 is cool',
+        'references': [{
+            'UID': 'paper2',
+            'title': 'paper2 is cool',
+            'abstract': 'Paper2 is about B'
+        }]
+    }, {
+        'UID': 'paper2',
+        'title': 'paper2 is cool',
+        'abstract': 'Paper2 is about B',
+        'references': []
+    }, {
+        'UID':
+        'paper3',
+        'title':
+        'paper3 is cool',
+        'abstract':
+        'Paper3 is about C',
+        'references': [{
+            'UID': 'paper1',
+            'title': 'paper1 is cool'
+        }, {
+            'UID': 'paper2',
+            'title': 'paper2 is cool',
+            'abstract': 'Paper2 is about B',
+        }]
+    }]
+
+
+def test_prune_jsonl(input_jsonl, output_jsonl):
+
+    result = utils.prune_jsonl(input_jsonl)
+
+    print(result)
+    assert result == output_jsonl

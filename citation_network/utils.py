@@ -172,7 +172,8 @@ def prune_citation_network(graph, main_results_only=None,
 
 def prune_jsonl(jsonl):
     """
-    Removes all references that are not also in the main results.
+    Removes all references that are not also in the main results. Also adds
+    abstracts to the reference instances.
 
     parameters:
         jsonl, list of dict: nested papers
@@ -188,6 +189,19 @@ def prune_jsonl(jsonl):
         except KeyError:
             continue
 
+    # Index abstracts by UID
+    abstracts = {}
+    for paper in jsonl:
+        try:
+            uid = paper['UID']
+        except KeyError:
+            continue
+        try:
+            abstract = paper['abstract']
+            abstracts[uid] = abstract
+        except KeyError:
+            continue
+
     final_jsonl = []
     for paper in jsonl:
         pruned_paper = {}
@@ -199,6 +213,10 @@ def prune_jsonl(jsonl):
                 for ref in paper['references']:
                     try:
                         if ref['UID'] in uids:
+                            try:
+                                ref['abstract'] = abstracts[ref['UID']]
+                            except KeyError:
+                                pass
                             updated_refs.append(ref)
                     except KeyError:
                         continue

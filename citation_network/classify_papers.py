@@ -20,13 +20,14 @@ import regex
 from math import ceil
 
 
-def build_graph(search_results, classified):
+def build_graph(search_results, classified, keyname):
     """
     Get nodes and edges and build GraphML.
 
     parameters:
         search_results
         classified, dict: keys are UID/paperIds, values are kingdoms
+        keyname, str: whether ot use 'UID' or 'paperId' to identify papers
 
     returns:
         citenet, MultiDiGraph: citation network
@@ -555,7 +556,7 @@ def generate_classified_dict(search_results, taxonerd, nlp, linker,
 
 def clean_input_data(search_results, keyname):
     """
-    Get rid of documents that don't have both title and abstracts. If a main
+    Get rid of documents that don't have UIDs or abstracts. If a main
     result paper doens't have an abstract, it and all of its references will be
     removed from the dataset.
 
@@ -566,34 +567,61 @@ def clean_input_data(search_results, keyname):
     returns:
         clean_search_results, list of dict: cleaned search results
     """
+    original_len = len(search_results)
     clean_search_results = []
     mains_dropped = []
     refs_dropped = []
+    mains_no_uid = 0
+    refs_no_uid = 0
     for res in search_results:
+        # Check for a UID
         try:
-            if res['abstract'] is not None:
-                updated_refs = []
-                for ref in res['references']:
-                    try:
-                        if ref['abstract'] is not None:
-                            updated_refs.append(ref)
-                    except KeyError:
-                        refs_dropped.append(ref[keyname])
-                res['references'] = updated_refs
-            clean_search_results.append(res)
+            uid = res['UID']
         except KeyError:
-            mains_dropped.append(res[keyname])
-            this_ref_dropped = []
+            mains_no_uid += 1
+            continue
+        # Check for a main result abstract
+        try:
+            main_abstract = res['abstract']
+        except KeyError:
+            mains_dropped.append(uid)
+            continue
+        # Check if the abstract is None
+        if main_abstract is None:
+            mains_dropped.append(uid)
+            continue
+        # If it's not None, we can process the references:
+        else:
+            updated_refs = []
             for ref in res['references']:
+                # Check for a UID
                 try:
-                    this_ref_dropped.append(ref[keyname])
+                    uid = ref['UID']
                 except KeyError:
-                    this_ref_dropped.append(f'no_uid_{res[keyname]}')
-            refs_dropped.extend(this_ref_dropped)
+                    refs_no_uid += 1
+                    continue
+                # Check for an abstract
+                try:
+                    ref_abstract = ref['abstract']
+                except KeyError:
+                    refs_dropped.append(uid)
+                    continue
+                # Check if the abstract is None
+                if ref_abstract is None:
+                    refs_dropped.append(uid)
+                    continue
+                # If it's not, then we can keep the reference
+                else:
+                    updated_refs.append(ref)
+            res['references'] = updated_refs
+        clean_search_results.append(res)
 
-    print(f'{len(set(mains_dropped))} main results of {len(search_results)} '
-        'were dropped due to missing an abstract, and '
-        f'{len(set(refs_dropped))} unique references were dropped.')
+    print(f'While processing documents, {mains_no_uid} main documents were '
+    f'dropped because they did not have a UID, and {refs_no_uid} references '
+    f'were lost for the same reason.\n{len(set(mains_dropped))} main results '
+    f'of the original {original_len} documents were dropped because they '
+    f'did not have abstracts, and {len(set(refs_dropped))} references were '
+    'dropped for not having an abstract.')
 
     return clean_search_results
 
@@ -639,7 +667,7 @@ def main(search_result_path, output_save_path, intermediate_save_path,
         # Map the classifications back to requested data structure and save
         if not main_results_only:
             print('\nBuilding graph...')
-            citenet = build_graph(search_results, classified)
+            citenet = build_graph(search_results, classified, keyname)
             # Save graph
             print('\nSaving graph...')
             nx.write_graphml(citenet, output_save_path)
