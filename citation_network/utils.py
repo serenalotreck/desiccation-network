@@ -66,7 +66,9 @@ def flatten_jsonl(jsonl):
 
 def map_classes_to_jsonl(graph, jsonl, flatten, keyname):
     """
-    Map the classes from a MultiDiGraph to the jsonl format.
+    Map the classes from a MultiDiGraph to the jsonl format. If there are extra
+    abstracts in the jsonl that don't exist in the graph, they are removed from
+    the dataset.
 
     parameters:
         graph, MultiDiGraph: graph with classifications
@@ -87,45 +89,13 @@ def map_classes_to_jsonl(graph, jsonl, flatten, keyname):
     updated_jsonl = []
     for paper in jsonl:
         to_modify = dict(paper)
-        to_modify['study_system'] = study_by_uid[to_modify[keyname]]
-        updated_jsonl.append(to_modify)
+        try:
+            to_modify['study_system'] = study_by_uid[to_modify[keyname]]
+            updated_jsonl.append(to_modify)
+        except KeyError:
+            continue
 
     return updated_jsonl
-
-
-def map_classes_to_topics(input_doc_df, topic_doc_df, graph, keyname):
-    """
-    Map the study system classifications from a classified citation network to
-    the topic clusters created by BERTopic.
-
-    parameters:
-        input_doc_df, df: the df from which the input to the topic model was
-            drawn without altering the original order
-        topic_doc_df, df: the output of topic_model.get_document_info(docs)
-        graph, MultiDiGraph: classified citation network
-        keyname, str: 'UID' or 'paperId', default is 'UID'
-
-    returns:
-        classified_topic_df, df: topic_doc_df with added column for
-            classifications
-    """
-    # Put the UID's back together with the docs
-    topic_doc_df[keyname] = input_doc_df.index.values.tolist()
-
-    # Match study systems to UIDs
-    study_by_uid = {uid: attrs['study_system'] for uid, attrs in
-            graph.nodes(data=True)}
-
-    # Get the classifications
-    study_systems = []
-    for doc_idx in input_doc_df.index.values.tolist():
-        study_systems.append(study_by_uid[doc_idx])
-
-    # Add to overall df
-    classified_topic_df = topic_doc_df
-    classified_topic_df['study_system'] = study_systems
-
-    return classified_topic_df
 
 
 def prune_citation_network(graph, main_results_only=None,
