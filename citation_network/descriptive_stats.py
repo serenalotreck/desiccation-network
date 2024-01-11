@@ -60,7 +60,7 @@ def per_class_histogram(flattened_papers, paper_classifications, search_term, ou
     missing_class = 0
     for pid, p in flattened_papers.items():
         try:
-            year = p['year']
+            year = int(p['year'])
         except KeyError:
             continue
         try:
@@ -134,7 +134,7 @@ def overall_histogram(flattened_papers, search_term, out_loc, out_prefix):
         try:
             year = p['year']
             if year is not None:
-                paper_years.append(year)
+                paper_years.append(int(year))
             else:
                 missing_years += 1
         except KeyError:
@@ -194,7 +194,7 @@ def main(jsonl, graphml, search_term, out_loc, out_prefix):
             pulled_papers.append(obj)
     classified_graph = nx.read_graphml(graphml)
     try:
-        pulled_papers['paperId']
+        pulled_papers[0]['paperId']
         keyname = 'paperId'
     except KeyError:
         keyname = 'UID'
