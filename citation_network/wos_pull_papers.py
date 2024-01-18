@@ -150,6 +150,20 @@ def convert_xml_paper(paper, kind):
                     '{http://clarivate.com/schema/wok5.30/public/FullRecord}pub_info'
             ):
                 paper_json['year'] = pub_info.attrib['pubyear']
+            # Authors
+            authors = []
+            for author_list in summary.findall(
+                    '{http://clarivate.com/schema/wok5.30/public/FullRecord}names'
+            ):
+                for name in author_list:
+                    author = {}
+                    for attrib_name, val in name.attrib.items():
+                        author[attrib_name] = val
+                    for value in name:
+                        tagname = value.tag.split('}')[-1]
+                        author[tagname] = value.text
+                    authors.append(author)
+            paper_json['authors'] = authors
         for fullrec in static.findall(
                 '{http://clarivate.com/schema/wok5.30/public/FullRecord}fullrecord_metadata'
         ):
@@ -163,6 +177,22 @@ def convert_xml_paper(paper, kind):
                         refs_list.append(
                             convert_xml_reference(etree.ElementTree(ref)))
                 paper_json['references'] = refs_list
+            # Addresses
+            addresses = []
+            for address_list in fullrec.findall(
+                    '{http://clarivate.com/schema/wok5.30/public/FullRecord}addresses'
+            ):
+                for address_instance in address_list.findall(
+                         '{http://clarivate.com/schema/wok5.30/public/FullRecord}address'
+                ):
+                    address = {}
+                    for attrib_name, val in address_instance.attrib.items():
+                        address[attrib_name] = val
+                    for elt in address_instance:
+                        tagname = elt.tag.split('}')[-1]
+                        address[tagname] = elt.text
+                    addresses.apend(address)
+            paper_json['addresses'] = addresses
             # Abstract
             for abstracts in fullrec.findall(
                     '{http://clarivate.com/schema/wok5.30/public/FullRecord}abstracts'
