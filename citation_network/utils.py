@@ -194,3 +194,36 @@ def prune_jsonl(jsonl):
         final_jsonl.append(pruned_paper)
 
     return final_jsonl
+
+
+def filter_papers(papers, key_df, kind, stringency='most'):
+    """
+    Filter papers by keyword.
+
+    parameters:
+        papers, list of dict: papers to filter
+        key_df, pandas df: index are keywords, column is 'relevant' containing Y or N strings
+        kind, str: either 'static_keywords' or 'dynamic_keys' ## TODO change to static_keys for udpated dataset
+        stringency, str: 'most', 'middle', or 'least', default is 'most'
+
+    returns:
+        filtered_papers, list of dict: list of papers with irrelevant papers removed
+    """
+    filtered_papers = []
+    for paper in papers:
+        # Get the relevances of all keywords
+        keys = paper[kind]
+        key_rels = key_df.loc[keys, :]
+        # Filter based on requested stringency
+        if stringency == 'most':
+            if (len(key_rels['relevant'].unique()) == 1) and (key_rels['relevant'].unique()[0] == 'Y'):
+                filtered_papers.append(paper)
+        elif stringency == 'middle':
+            nums = Counter(key_rels['relevant'].values.tolist())
+            if nums['Y'] > nums['N']:
+                filtered_papers.append(paper)
+        elif stringency == 'least':
+            if 'Y' in key_rels.relevant.values.tolist():
+                filtered_papers.append(paper)
+
+    return filtered_papers
