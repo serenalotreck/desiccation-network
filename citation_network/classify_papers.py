@@ -184,7 +184,7 @@ def map_specs_to_kings(species_ids):
                     king = defs[lineage[-2]]
                     if king == 'Opisthokonta':
                         king = defs[lineage[-3]]
-                        species_dict[spec_ent] = king
+                    species_dict[spec_ent] = king
                 except KeyError:
                     not_tracked_lineage += 1
                     continue
