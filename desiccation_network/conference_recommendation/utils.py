@@ -227,3 +227,171 @@ def filter_papers(papers, key_df, kind, stringency='most'):
                 filtered_papers.append(paper)
 
     return filtered_papers
+
+
+def process_alt_names(alt_names):
+    """
+    Turn an alternative name dataframe into a dict indexed by WOS standard names self-reported by attendees.
+    
+    parameters:
+        alt_names, df: columns are columns are Registration_surname, Registration_first_name,
+            Alternative_name_1..., Maiden_name
+        
+    returns:
+        alt_names_dict, dict: keys are "surname, initials", values are lists of tuple with (last name, first name)
+            alternative names
+    """
+    alt_names_dict = {}
+    for row in alt_names.iterrows():
+        row = row[1]
+        key = f'{row.Registration_surname.lower()}, {"".join([n[0] for n in row.Registration_first_name.split()]).lower()}'
+        names = []
+        # Get alternative names with same surname
+        for name in row.tolist()[2:-1]:
+            if not isinstance(name, str):
+                continue
+            split_name = name.split(' ')
+            # Remove surname to get first name
+            ## TODO deal with the specific edge cases where this fails for our attendees in manual pre-processing
+            surname = row.Registration_surname.split(' ')
+            first_name = [i for i in split_name if i not in surname]
+            full_name = (' '.join(surname).lower(),
+                         ' '.join(first_name).lower())
+            names.append(full_name)
+        if isinstance(row.Maiden_name, str):
+            name = (row.Maiden_name.lower(),
+                    row.Registration_first_name.lower())
+            names.append(name)
+        alt_names_dict[key] = names
+
+    return alt_names_dict
+
+
+def find_author_papers(attendees, dataset, alt_names):
+    """
+    Find papers that were authored by conference attendees.
+    
+    parameters:
+        attendees, df: columns are Surname, First_name, Affiliation, Country
+        dataset, list of dict: WoS papers with author and affiliation data
+        alt_names, dict: formatted as per process_alt_names output
+        
+    returns:
+        conference_authors, dict: keys are DesWorks recorded author names in WOS standard, values are WOS UIDs
+    """
+    ## TODO edge cases
+    # 1. Names with internal punctuation (e.g. O'Neill, Farooq-E-Azam)
+    # 2. Check that Chinese names are correctly recovered with this approach, if not, add case
+    # 3. Papers between 64-75 for authors with last names more than 8 characters
+
+    # Maiden names
+    maiden_names = {
+        name[0]: wos_name
+        for wos_name, name_list in alt_names.items()
+        for name in name_list
+    }
+
+    # Check for conference authors
+    conference_authors = {
+        f'{surname.lower()}, {"".join([n[0] for n in first_name.split()]).lower()}':
+        []
+        for surname, first_name in zip(attendees['Surname'],
+                                       attendees['First_name'])
+    }
+    for paper in dataset:
+        # Check only surname first
+        surnames = []
+        for a in paper['authors']:
+            try:
+                surnames.append(a['last_name'].lower())
+            except KeyError:
+                # Dot 11-character names don't have a last name and we want
+                # to include them. Other authors with no last name are
+                # mostly organizations or repeats, can skip them
+                try:
+                    if len(a['wos_standard'].split('.')) == 2:
+                        surnames.append(a['wos_standard'].split('.')
+                                        [0].lower())  ## TODO #3
+                except KeyError:
+                    continue
+        for name in surnames:
+            # If surname is present, confirm with wos standard (including first name) name
+            if (name in attendees.Surname.tolist()) or (
+                    name in maiden_names.keys()):
+                # Change maiden name to registered name if relevant
+                if name in maiden_names.keys():
+                    name = maiden_names[name].split(', ')[0]
+                # Get the rows with this surname, possible multiple have same surname
+                possible_authors = self.attendees[
+                    attendees['Surname'] == name][[
+                        'Surname', 'First_name'
+                    ]]
+                # Process first names to initials
+                possible_first_names = possible_authors.First_name.tolist()
+                possible_initials = [
+                    "".join([n[0] for n in fn.split()])
+                    for fn in possible_first_names
+                ]
+                # Get first name as initial name format
+                pre_2006s_and_WOS_standard = [
+                    f'{name}, {initials}' for initials in possible_initials
+                ]
+                # Get alternative names for these possible authors
+                possible_first_names += [
+                    name[1] for prename in pre_2006s_and_WOS_standard
+                    for name in additional_names[prename]
+                ]
+                possible_initials += [
+                    "".join([n[0] for n in name[1].split()])
+                    for prename in pre_2006s_and_WOS_standard
+                    for name in additional_names[prename]
+                ]
+                pre_2006s_and_WOS_standard += [
+                    f'{name}, {initials}' for initials in possible_initials
+                ]
+                # Get possible oldest name format
+                char_11s_space = [
+                    f'{name[:8]}, {initials}'
+                    for initials in possible_initials
+                ]
+                char_11s_period = [
+                    f'{name[:8]}.{initials}'
+                    for initials in possible_initials
+                ]
+                # Get full name
+                full_names = [
+                    f'{name}, {first_name}'
+                    for first_name in possible_first_names
+                ]
+                # Combine for all possibilities
+                to_check = char_11s_space + char_11s_period + pre_2006s_and_WOS_standard + full_names
+                # Now check all names against paper authors
+                for author in paper['authors']:
+                    full_authors_found = []
+                    if (author['full_name'].lower() in to_check) or (
+                            author['wos_standard'].lower() in to_check):
+                        if len(possible_authors) == 1:
+                            try:
+                                conference_authors[
+                                    author['wos_standard'].lower()].append(
+                                        paper['UID'])
+                            except KeyError:
+                                ## TODO I think this works for my particular observed cases, but does not generalize, need to generalize
+                                key = pre_2006s_and_WOS_standard[
+                                    0] if pre_2006s_and_WOS_standard[0].split(
+                                        ', '
+                                    )[0][0] == author['wos_standard'].lower(
+                                    ).split(', ')[1][
+                                        0] else pre_2006s_and_WOS_standard[
+                                            1]
+                                conference_authors[key].append(
+                                    paper['UID'])
+                        else:
+                            full_authors_found.append(
+                                author['wos_standard'].lower())
+                if len(full_authors_found) != 0:
+                    for author_name in full_authors_found:
+                        conference_authors[author_name].append(
+                            paper['UID'])
+
+    return conference_authors

@@ -1,0 +1,76 @@
+"""
+Generate conference invite recommendations based on bibliometric factors.
+
+Author: Serena G. Lotreck
+"""
+import argparse
+from os.path import abspath
+import jsonlines
+import networkx as nx
+from recommendation_system import RecommendationSystem
+
+
+def build_topic_model(topic_model_config):
+    """
+    Build topic model from a config.
+    """
+    
+    return topic_model = BERTopic(embedding_model=sentence_model, umap_model=umap_model, representation_model=representation_models, vectorizer_model=vectorizer_model)
+
+
+
+def main(paper_dataset, classed_cite_net, topic_model_config, attendees,
+            alt_names, viz_threshold, outpath, outprefix):
+
+    # Build topic model
+    topic_model = build_topic_model(topic_model_config)
+
+    # Build recommendation instance
+    rec_model = RecommendationSystem(paper_dataset, classed_citation_net,
+                topic_model, attendees, alt_names, viz_threshold, outpath,
+                outprefix)
+
+    # Get recommendations
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description='Generate conference recs')
+
+    parser.add_argument('jsonl_path', type=str,
+            help='Path to jsonl dataset with papers, authors and institutions')
+    parser.add_argument('graphml_path', type=str,
+            help='Path to classified citation network graphml file')
+    parser.add_argument('topic_model_config', type=str,
+            help='Path to a json file with modeling preferences for BERTopic')
+    parser.add_argument('attendee_path', type=str,
+            help='Path to .csv file with conference attendees, columns are '
+            'Surname, First_name, Affiliation, Country')
+    parser.add_argument('alt_name_path', type=str,
+            help='Path to alternative publication names for attendees, columns '
+            'are Registration_surname, Registration_first_name, '
+            'Alternative_name_1..., Maiden_name')
+    parser.add_argument('viz_threshold', type=float, default=None,
+            help='Number between 0 and 1, the percent of authors to include '
+            'for graphs saved for visualization')
+    parser.add_argument('outpath', type=str, default='',
+            help='Path to directory to save output')
+    parser.add_arguments('outprefix', type=str, default='',
+            help='String to prepend to output file names')
+
+    # Read in files here
+    with jsonlines.open(abspath(args.jsonl_path)) as reader:
+        paper_dataset = [obj for obj in reader]
+
+    classed_cite_net = nx.read_graphml(abspath(args.graphml_path))
+
+    with open(abspath(args.topic_model_config)) as myf:
+        topic_model_config = json.load(myf)
+
+    attendees = pd.read_csv(abspath(args.attendee_path))
+
+    alt_names = pd.read_csv(abspath(args.alt_name_path))
+
+    args.outpath = abspath(args.outpath)
+
+    main(paper_dataset, classed_cite_net, topic_model_config, attendees,
+            alt_names, args.viz_threshold, args.outpath, args.outprefix)
