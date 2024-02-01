@@ -33,17 +33,23 @@ def build_topic_model(topic_model_config):
 
 
 def main(paper_dataset, classed_cite_net, topic_model_config, attendees,
-            alt_names, viz_threshold, outpath, outprefix):
+            alt_names, enrich_threshold, viz_threshold, save_clusters, outpath,
+            outprefix):
 
     # Build topic model
     topic_model = build_topic_model(topic_model_config)
+    if topic_model_config['outlier_reduction']:
+        outlier_reduction_params = topic_model_config['outlier_reduction_params']
+    else:
+        outlier_reduction_params = None
 
     # Build recommendation instance
     rec_model = RecommendationSystem(paper_dataset, classed_citation_net,
-                topic_model, attendees, alt_names, viz_threshold, outpath,
-                outprefix)
+                topic_model, attendees, alt_names, outlier_reduction_params,
+                enrich_threshold, viz_threshold, save_clusters, outpath, outprefix)
 
     # Get recommendations
+    recs = rec_model.calculate_conference_candidates()
 
 if __name__ == "__main__":
 
@@ -62,9 +68,17 @@ if __name__ == "__main__":
             help='Path to alternative publication names for attendees, columns '
             'are Registration_surname, Registration_first_name, '
             'Alternative_name_1..., Maiden_name')
+    parser.add_argument('enrich_threshold', type=float, default=None,
+            help='Number between 0 and 1, proportion of authors in a cluster '
+            'that should be conference attendees to consider a cluster '
+            '"enriched" in conference attendees. For smaller conferences, this '
+            'should be left as None, as few clusters will contain authors and '
+            'they will only be present in smaller numbers')
     parser.add_argument('viz_threshold', type=float, default=None,
             help='Number between 0 and 1, the percent of authors to include '
             'for graphs saved for visualization')
+    parser.add_argument('--save_clusters', action='store_true',
+            help='Whether or not to save cluster to author maps.')
     parser.add_argument('outpath', type=str, default='',
             help='Path to directory to save output')
     parser.add_arguments('outprefix', type=str, default='',
@@ -86,4 +100,5 @@ if __name__ == "__main__":
     args.outpath = abspath(args.outpath)
 
     main(paper_dataset, classed_cite_net, topic_model_config, attendees,
-            alt_names, args.viz_threshold, args.outpath, args.outprefix)
+            alt_names, args.enrich_threshold, args.viz_threshold, args.save_clusters,
+            args.outpath, args.outprefix)

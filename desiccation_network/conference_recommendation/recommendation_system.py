@@ -14,7 +14,8 @@ class RecommendationSystem():
     Class to perform conference recommendations based on a set of information.
     """
     def __init__(self, paper_dataset, classed_citation_net, topic_model, attendees,
-                 alt_names, viz_threshold=None, outpath='', outprefix=''):
+                 alt_names, outlier_reduction_params=None, enrich_threshold=None,
+                 viz_threshold=None, save_clusters=True, outpath='', outprefix=''):
         """
         parameters:
             paper_dataset, list of dict: WoS papers with author and affiliation
@@ -28,6 +29,11 @@ class RecommendationSystem():
             attendees, df: columns are Surname, First_name, Affiliation, Country
             alt_names, df: columns are columns are Registration_surname,
                 Registration_first_name, Alternative_name_1..., Maiden_name
+            enrich_threshold, float: proportion of authors in a cluster that
+                should be conference attendees to consider a cluster "enriched"
+                in conference attendees. For smaller conferences, this should be
+                left as None, as few clusters will contain authors and they will
+                only be present in smaller numbers
             viz_threshold, float: number between 0 and 1, the percent of authors
                 to include for graphs saved for visualization
             outpath, str: path to save outputs
@@ -48,7 +54,10 @@ class RecommendationSystem():
         self.alt_names = utils.process_alt_names(alt_names)
         self.conference_authors = utils.find_author_papers(attendees, paper_dataset,
                                                         alt_names)
+        self.outlier_reduction_params = outlier_reduction_params
+        self.enrich_threshold = enrich_threshold
         self.viz_threshold = viz_threshold
+        self.save_clusters = save_clusters
         self.outpath = outpath
         self.outprefix = outprefix
 
@@ -57,13 +66,14 @@ class RecommendationSystem():
         self.paper_authors = None
         self.tm_doc_df = None
         self.id_to_topic = None
-        self.tm_cluster_ids = None
-        self.authors_to_topics = None
+        self.paper_to_topic = None
+        self.topics_to_authors = None
         self.co_cite_net = None
         self.co_cite_ids_to_authors = None
         self.co_author_net = None
         self.co_author_ids_to_authors = None
         self.cite_ids_to_authors = None
+        self.enriched_clusters = None
 
 
     def set_author_papers(self):
@@ -111,17 +121,15 @@ class RecommendationSystem():
         print(f'There are {len(abstracts)} abstracts in the dataset.')
         self.tm_doc_df = abstracts
 
-
-    def set_authors_to_topics(self):
+    def set_topics_to_authors(self):
         """
-        Set authors_to_topics attribute
+        Set topics_to_authors attribute
         """
-        authors_to_topics = {}
-        for author, papers in self.author_papers.items():
-            tops = [self.id_to_topic[uid] for uid in papers]
-            authors_to_topics[author] = tops
-        self.authors_to_topics = authors_to_topics
-
+        topics_to_authors = defaultdict(list)
+        for paper, topic in self.paper_to_topic.items():
+            for author in paper_authors[paper]:
+                topics_to_authors[topic].append(author)
+        self.topics_to_authors = topics_to_authors
 
     def create_co_author_network(self):
         """
@@ -166,7 +174,7 @@ class RecommendationSystem():
             nodes_to_remove = rows_to_remove.index.tolist()
             _ = co_author_graph.remove_nodes_from(nodes_to_remove)
         co_author_graph.write_graphml(f'{self.outpath}/{self.outprefix}_co_author_network.graphml')
-
+        print(f'Saved co-author network as {self.outpath}/{self.outprefix}_co_author_network.graphml')
 
     def create_co_citation_network(self):
         """
@@ -206,52 +214,103 @@ class RecommendationSystem():
             nodes_to_remove = rows_to_remove.index.tolist()
             _ = co_citation_graph.remove_nodes_from(nodes_to_remove)
         co_citation_graph.write_graphml(f'{self.outpath}/{self.outprefix}_co_citation_network.graphml')
+        print(f'Saved co-citation network as {self.outpath}/{self.outprefix}_co_citation_network.graphml')
 
     def cluster_citation_network(self):
         """
         Perform InfoMap clustering on directed citation network.
         """
+        print('\nPerfomring Infomap clustering on citation network...')
         im = Infomap(seed=1234)
         mapping = im.add_networkx_graph(self.classed_citation_net)
         _ = im.run()
         cluster_output = im.get_dataframe(["module_id", "name"])
-        self.cite_ids_to_authors = cluster_output.set_index("name").to_dict()
-    
+        self.cite_ids_to_authors = defaultdict(list)
+        for uid, cluster_id in cluster_output.set_index("name").to_dict().items():
+            for author in self.paper_authors[uid]:
+                self.cite_uids_to_authors[cluster_id].append(author)
 
     def cluster_co_author_network(self):
         """
         Clusters co-author network with Louvain clustering.
         """
+        print('\nPerforming Louvain clustering on co-author network...')
         communities = nx.louvain_communities(self.co_author_net, seed=1234)
         self.co_author_ids_to_authors = {i: comm for i, comm in enumerate(communities)}
-
 
     def cluster_co_citation_network(self):
         """
         Clusters co-citation network with Louvain clustering
         """
+        print('\nPerforming Louvain clustering on co-citation network...')
         communities = nx.louvain_communities(self.co_cite_net, seed=1234)
         self.co_cite_ids_to_authors = {i: comm for i, comm in enumerate(communities)}
-    
 
-    def fit_topic_model(self, outlier_reduction_params=None):
+    def fit_topic_model(self):
         """
         Fit topic model and set topic cluster IDs, save plot with topic rep
         study system distributions.
-
-        parameters:
-            outlier_reduction_params, dict: kwargs for outlier reduction
         """
+        print('\nFitting topic model...')
         self.set_tm_doc_df()
         docs = self.tm_doc_df.abstract.values.tolist()
-        print('\nFitting topic model...')
         topics, probs = self.topic_model.fit_transform(docs)
         if outlier_reduction_params is not None:
-            new_topics = self.topic_model.reduce_outliers(docs, topics, **outlier_reduction_params)
+            new_topics = self.topic_model.reduce_outliers(docs, topics, **self.outlier_reduction_params)
             self.topic_model.update(docs, topics=new_topics, vectorizer_model=self.vec_model, representation_model=self.rep_model)
         self.id_to_topic = {int(itop[0]): itop[1] for itop in self.topic_model.get_topic_info()['Name'].str.split('_')}
         doc_tops = self.topic_model.get_document_info(docs)
         doc_tops['UID'] = self.tm_doc_df.index
-        self.tm_cluster_ids = doc_tops[['UID', 'Topic']].to_dict()
-        self.set_authors_to_topics()
+        self.paper_to_topic = doc_tops[['UID', 'Topic']].to_dict()
+        self.set_topics_to_authors()
+    
+    def calculate_community_enrichment(self):
+        """
+        Calculate conference author enrichment in all types of clusters.
+        """
+        print('\nCalculating community enrichments for all cluster types...')
+        enrichments = {}
+        for clust_type, ids_to_authors in {
+            'directed_citation': self.cite_ids_to_authors,
+            'co_citation': self.co_cite_ids_to_authors,
+            'co_author': self.co_author_ids_to_authors,
+            'topic': self.topics_to_authors
+        }.items():
+            if self.save_clusters:
+                savename = f'{self.outpath}/{self.outprefix}_{clust_type}_ids_to_authors.json'
+                with open(savename, 'w') as myf:
+                    json.dump(ids_to_authors, savename)
+                print(f'Saved {clust_type} id to authors dict as {savename}')
+            clust_enrich = {}
+            for clust, authors in ids_to_authors.items():
+                num_conf = [auth for auth in authors if auth in self.conference_authors.keys()]
+                total_num = len(authors)
+                enrich_prop = num_conf/total_num
+                clust_enrich[clust] = enrich_prop
+            enrichments[clust_type] = clust_enrich
+        self.enriched_clusters = enrichments
+    
+    def calulate_conference_candidates(self):
+        """
+        Get candidates for conference invitation.
+        """
+        print('\nBeginning calculations for conference candidates')
+        print('---------------------------------------------------------------')
         
+        # Get extra networks
+        self.create_co_citation_network()
+        self.create_co_author_network()
+        
+        # Perform topic modeling
+        self.fit_topic_model()
+        
+        # Perform other clustering
+        self.cluster_citation_network()
+        self.cluster_co_citation_network()
+        self.cluster_co_author_network()
+        
+        # Get enrichments
+        self.calculate_community_enrichments()
+        
+        # Apply heuristic calculation
+        ## TODO
