@@ -15,8 +15,11 @@
         ],
         "min_df": 10
     },
-    "representation_model_name": "MMR",
+    "representation_model_name": "openai",
     "representation_params": {
-        "diversity": 0.3
-    }
+        "model": "gpt-3.5-turbo",
+        "chat": true
+    },
+    "openai_api_key_path": "../data/openai_api_key.py"
+    "outlier_reduction": true
 }

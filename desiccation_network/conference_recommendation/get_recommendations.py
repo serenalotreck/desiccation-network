@@ -5,6 +5,7 @@ Author: Serena G. Lotreck
 """
 import argparse
 from os.path import abspath
+import sys
 import jsonlines
 import networkx as nx
 from recommendation_system import RecommendationSystem
@@ -12,11 +13,23 @@ from recommendation_system import RecommendationSystem
 
 def build_topic_model(topic_model_config):
     """
-    Build topic model from a config.
-    """
-    
-    return topic_model = BERTopic(embedding_model=sentence_model, umap_model=umap_model, representation_model=representation_models, vectorizer_model=vectorizer_model)
+    Build topic model from a config. Assumes that all of sentence transformer,
+    umap, vectorizer and representations models are present in config.
 
+    Currently supports MMR and OpenAI representation models.
+    """
+    embedding_model = SentenceTransformer(topic_model_config['sent_trans_model'])
+    umap_model = UMAP(**topic_model_config['umap_params'])
+    vectorizer_model = CountVectorizer(**topic_model_config['vectorizer_params'])
+    if topic_model_config['representation_model_name'] == 'openai':
+        with open(abspath(topic_model_config['openai_api_key_path'])) as myf:
+            API_KEY = myf.read().split(' ')[-1]
+        client = openai.OpenAI(api_key=API_KEY)
+        representation_model = OpenAI(client, **topic_model_config['representation_params'])
+    elif topic_model_config['representation_model_name'].lower() == 'mmr':
+        representation_model = MaximalMarginalRelevance(**topic_model_config['representation_params'])
+
+    return BERTopic(embedding_model=embedding_model, umap_model=umap_model, representation_model=representation_model, vectorizer_model=vectorizer_model)
 
 
 def main(paper_dataset, classed_cite_net, topic_model_config, attendees,

@@ -5,6 +5,8 @@ Author: Serena G. Lotreck
 """
 import utils
 import pandas as pd
+import networkx as nx
+from infomap import Infomap
 
 
 class RecommendationSystem():
@@ -21,6 +23,8 @@ class RecommendationSystem():
                 are papers and edges are citations, nodes have study_system
                 attribute defined
             topic_model, BERTopic instance: topic model to use
+            vec_model, CountVectorizer: vectorizer model for topic_model
+            rep_model, one of several types: representation model for topic_model
             attendees, df: columns are Surname, First_name, Affiliation, Country
             alt_names, df: columns are columns are Registration_surname,
                 Registration_first_name, Alternative_name_1..., Maiden_name
@@ -33,6 +37,8 @@ class RecommendationSystem():
         self.paper_dataset = paper_dataset
         self.classed_citation_net = classed_citation_net
         self.topic_model = topic_model
+        self.vec_model = vec_model
+        self.rep_model = rep_model
         
         # Process attendees to strip trailing whitespace and to lowercase
         for col in attendees.columns:
@@ -49,8 +55,15 @@ class RecommendationSystem():
         # Initialize attrubtes that are optionally set by methods later on
         self.author_papers = None
         self.paper_authors = None
+        self.tm_doc_df = None
+        self.id_to_topic = None
+        self.tm_cluster_ids = None
+        self.authors_to_topics = None
         self.co_cite_net = None
+        self.co_cite_ids_to_authors = None
         self.co_author_net = None
+        self.co_author_ids_to_authors = None
+        self.cite_ids_to_authors = None
 
 
     def set_author_papers(self):
@@ -83,6 +96,32 @@ class RecommendationSystem():
                     continue
         self.apper_authors = paper_authors
 
+    def set_tm_doc_df(self):
+        """
+        Preprocess documents for topic modeling and set as attribute
+        """
+        data_with_class = utils.map_classes_to_jsonl(self.classed_cite_net, self.paper_data, False, 'UID')
+        abstracts_and_classes = {'UID': [], 'abstract': [], 'study_system': [], 'year': []}
+        for paper in data_with_class:
+            abstracts_and_classes['UID'].append(paper['UID'])
+            abstracts_and_classes['abstract'].append(paper['abstract'])
+            abstracts_and_classes['study_system'].append(paper['study_system'])
+            abstracts_and_classes['year'].append(int(paper['year']))
+        abstracts = pd.DataFrame.from_dict(abstracts_and_classes, orient='columns').set_index('UID')
+        print(f'There are {len(abstracts)} abstracts in the dataset.')
+        self.tm_doc_df = abstracts
+
+
+    def set_authors_to_topics(self):
+        """
+        Set authors_to_topics attribute
+        """
+        authors_to_topics = {}
+        for author, papers in self.author_papers.items():
+            tops = [self.id_to_topic[uid] for uid in papers]
+            authors_to_topics[author] = tops
+        self.authors_to_topics = authors_to_topics
+
 
     def create_co_author_network(self):
         """
@@ -92,6 +131,7 @@ class RecommendationSystem():
 
         Saves out a thresholded version of the graph for visualization.
         """
+        print('\nBuilding co-author network...')
         # Get all co-author pairs
         co_authorship_weights = defaultdict(int)
         for paper in self.paper_dataset:
@@ -135,6 +175,7 @@ class RecommendationSystem():
 
         Saves out a thresholded version of the graph for visualization.
         """
+        print('\nBuilding co-citation network...')
         self.set_paper_authors()
         
         co_citation_weights = defaultdict(int)
@@ -165,3 +206,52 @@ class RecommendationSystem():
             nodes_to_remove = rows_to_remove.index.tolist()
             _ = co_citation_graph.remove_nodes_from(nodes_to_remove)
         co_citation_graph.write_graphml(f'{self.outpath}/{self.outprefix}_co_citation_network.graphml')
+
+    def cluster_citation_network(self):
+        """
+        Perform InfoMap clustering on directed citation network.
+        """
+        im = Infomap(seed=1234)
+        mapping = im.add_networkx_graph(self.classed_citation_net)
+        _ = im.run()
+        cluster_output = im.get_dataframe(["module_id", "name"])
+        self.cite_ids_to_authors = cluster_output.set_index("name").to_dict()
+    
+
+    def cluster_co_author_network(self):
+        """
+        Clusters co-author network with Louvain clustering.
+        """
+        communities = nx.louvain_communities(self.co_author_net, seed=1234)
+        self.co_author_ids_to_authors = {i: comm for i, comm in enumerate(communities)}
+
+
+    def cluster_co_citation_network(self):
+        """
+        Clusters co-citation network with Louvain clustering
+        """
+        communities = nx.louvain_communities(self.co_cite_net, seed=1234)
+        self.co_cite_ids_to_authors = {i: comm for i, comm in enumerate(communities)}
+    
+
+    def fit_topic_model(self, outlier_reduction_params=None):
+        """
+        Fit topic model and set topic cluster IDs, save plot with topic rep
+        study system distributions.
+
+        parameters:
+            outlier_reduction_params, dict: kwargs for outlier reduction
+        """
+        self.set_tm_doc_df()
+        docs = self.tm_doc_df.abstract.values.tolist()
+        print('\nFitting topic model...')
+        topics, probs = self.topic_model.fit_transform(docs)
+        if outlier_reduction_params is not None:
+            new_topics = self.topic_model.reduce_outliers(docs, topics, **outlier_reduction_params)
+            self.topic_model.update(docs, topics=new_topics, vectorizer_model=self.vec_model, representation_model=self.rep_model)
+        self.id_to_topic = {int(itop[0]): itop[1] for itop in self.topic_model.get_topic_info()['Name'].str.split('_')}
+        doc_tops = self.topic_model.get_document_info(docs)
+        doc_tops['UID'] = self.tm_doc_df.index
+        self.tm_cluster_ids = doc_tops[['UID', 'Topic']].to_dict()
+        self.set_authors_to_topics()
+        

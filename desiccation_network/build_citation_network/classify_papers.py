@@ -143,8 +143,6 @@ def map_paper_species(paper_spec_names, species_dict, generic_dict,
             else:
                 # If there's no classification, return NOCLASS
                 king = 'NOCLASS'
-                print(
-                    f'\nSpec names for paper without classification: {spec_names}')
         classified[paperId] = king
 
     return classified
@@ -349,7 +347,6 @@ def get_species_classes(paper_spec_names, nlp, linker, intermediate_save_path,
             print(f'Time to apply linker on doc {i}: {time.time() - start: .2f}')
             for ent in doc.ents:
                 ent_id = ent._.kb_ents[0][0].split(':')[1]
-                print('ent id for species ', ent, ': ', ent_id)
                 species_ids[ent.text] = ent_id
          # Use taxoniq to try and fill in some unlinked species
         print(f'Using taxoniq to attempt to link the missed entities...')
