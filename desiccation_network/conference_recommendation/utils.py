@@ -395,3 +395,25 @@ def find_author_papers(attendees, dataset, alt_names):
                             paper['UID'])
 
     return conference_authors
+
+
+def get_geographic_locations(dataset):
+    """
+    Get the country name of the most recent affiliation for all authors.
+
+    parameters:
+        dataset, list of dict: paper dataset with authors and affiliations
+    """
+    # Drop papers with no year
+    papers_with_years = [paper for paper in dataset if 'year' in paper.keys()]
+    # Sort papers by year
+    papers_chron_order_rev = sorted(self.paper_dataset, key=lambda x: x['year'],
+                                reverse=True)
+    # Get most recent affiliations
+    author_affils = {}
+    for paper in papers_chron_order_rev:
+        for author in paper['authors']:
+            if author['wos_standard'] in author_affils.keys():
+                continue
+            else:
+                pass

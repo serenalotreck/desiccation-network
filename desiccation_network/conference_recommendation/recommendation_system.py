@@ -70,9 +70,12 @@ class RecommendationSystem():
         self.topics_to_authors = None
         self.co_cite_net = None
         self.co_cite_ids_to_authors = None
+        self.co_cite_partitions = None
         self.co_author_net = None
         self.co_author_ids_to_authors = None
+        self.co_author_partitions = None
         self.cite_ids_to_authors = None
+        self.cite_partitions = None
         self.enriched_clusters = None
 
 
@@ -86,7 +89,7 @@ class RecommendationSystem():
             uid = paper['UID']
             for author in paper['authors']:
                 try:
-                    author_papers[author['wos_standard']].append(uid)
+                    author_papers[author['wos_standard'].lower()].append(uid)
                 except KeyError:
                     continue
         self.author_papers = author_papers
@@ -101,7 +104,7 @@ class RecommendationSystem():
             uid = paper['UID']
             for author in paper['authors']:
                 try:
-                    paper_authors[uid].append(author['wos_standard'])
+                    paper_authors[uid].append(author['wos_standard'].lower())
                 except KeyError:
                     continue
         self.apper_authors = paper_authors
@@ -131,6 +134,12 @@ class RecommendationSystem():
                 topics_to_authors[topic].append(author)
         self.topics_to_authors = topics_to_authors
 
+    def set_geographic_locations(self):
+        """
+        Set author_locations attribute with most recent affiliation location.
+        """
+        self.author_locations = utils.get_geographic_locations(self.paper_dataset)
+            
     def create_co_author_network(self):
         """
         Creates a weighted, undirected co-authorship network, where the nodes
@@ -236,6 +245,7 @@ class RecommendationSystem():
         """
         print('\nPerforming Louvain clustering on co-author network...')
         communities = nx.louvain_communities(self.co_author_net, seed=1234)
+        self.co_author_partitions = nx.louvain_partitions(self.co_author_net, seed=1234)
         self.co_author_ids_to_authors = {i: comm for i, comm in enumerate(communities)}
 
     def cluster_co_citation_network(self):
@@ -244,6 +254,7 @@ class RecommendationSystem():
         """
         print('\nPerforming Louvain clustering on co-citation network...')
         communities = nx.louvain_communities(self.co_cite_net, seed=1234)
+        self.co_cite_partitions = nx.louvain_partitions(self.co_author_net, seed=1234)
         self.co_cite_ids_to_authors = {i: comm for i, comm in enumerate(communities)}
 
     def fit_topic_model(self):
@@ -290,7 +301,13 @@ class RecommendationSystem():
             enrichments[clust_type] = clust_enrich
         self.enriched_clusters = enrichments
     
-    def calulate_conference_candidates(self):
+    def calculate_candidate_scores(self):
+        """
+        Get scores for all potential candidates.
+        """
+        pass
+    
+    def get_conference_candidates(self):
         """
         Get candidates for conference invitation.
         """
@@ -313,4 +330,4 @@ class RecommendationSystem():
         self.calculate_community_enrichments()
         
         # Apply heuristic calculation
-        ## TODO
+        
