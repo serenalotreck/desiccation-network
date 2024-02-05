@@ -20,7 +20,7 @@
         "model": "gpt-3.5-turbo",
         "chat": true
     },
-    "openai_api_key_path": "../data/openai_api_key.py"
+    "openai_api_key_path": "../../data/openai_key.py",
     "outlier_reduction": true,
     "outlier_reduction_params": {
         "strategy": "embeddings",
