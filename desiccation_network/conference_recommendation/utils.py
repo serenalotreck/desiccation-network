@@ -246,16 +246,21 @@ def process_alt_names(alt_names):
         row = row[1]
         key = f'{row.Registration_surname.lower()}, {"".join([n[0] for n in row.Registration_first_name.split()]).lower()}'
         names = []
+        # Put original name in list
+        names.append((row.Registration_surname.lower(), row.Registration_first_name.lower().strip('.')))
+        print('new name: ', names)
         # Get alternative names with same surname
         for name in row.tolist()[2:-1]:
             if not isinstance(name, str):
                 continue
             split_name = name.split(' ')
             # Remove surname to get first name
-            ## TODO deal with the specific edge cases where this fails for our attendees in manual pre-processing
             surname = row.Registration_surname.split(' ')
             first_name = [i for i in split_name if i not in surname]
-            full_name = (' '.join(surname).lower(),
+            # Adjust surname if one part is missing in alt name (edge case that exists in our data)
+            alt_surname = [i for i in split_name if i not in first_name]
+            first_name = [' '.join([i.strip() for i in nm.split('.')]).strip() for nm in first_name]
+            full_name = (' '.join(alt_surname).lower(),
                          ' '.join(first_name).lower())
             names.append(full_name)
         if isinstance(row.Maiden_name, str):
@@ -270,6 +275,9 @@ def process_alt_names(alt_names):
 def find_author_papers(attendees, dataset, alt_names):
     """
     Find papers that were authored by conference attendees.
+
+    TODO: this function is heinous and desperately needs refactoring, but it
+    does work and pass tests, so not high priority
 
     parameters:
         attendees, df: columns are Surname, First_name, Affiliation, Country
@@ -288,9 +296,15 @@ def find_author_papers(attendees, dataset, alt_names):
     # 2. Check that Chinese names are correctly recovered with this approach, if not, add case
     # 3. Papers between 64-75 for authors with last names more than 8 characters
 
+    # Process attendees to lowercase
+    for col in attendees.columns:
+            attendees[col] = attendees[col].str.strip().str.lower()
+    
     # Maiden names
-    maiden_names = {name[0]: wos_name for wos_name, name_list in
-            alt_names.items() for name in name_list}
+    maiden_names = {}
+    for wos_name, names in alt_names.items():
+        if names[-1][0] != names[0][0]:
+            maiden_names[names[-1][0]] = wos_name ## Would fail if multiple people have the same maiden name
 
     # Check for conference authors
     conference_authors = {
@@ -305,6 +319,7 @@ def find_author_papers(attendees, dataset, alt_names):
         for surname, first_name in zip(attendees['Surname'],
                                        attendees['First_name'])
     }
+    # alt_surnames = 
 
     for paper in dataset:
         # Check only surname first
@@ -322,13 +337,11 @@ def find_author_papers(attendees, dataset, alt_names):
                                         [0].lower())  ## TODO #3
                 except KeyError:
                     continue
+
         for name in surnames:
             # If surname is present, confirm with wos standard (including first name) name
-            if (name in attendees.Surname.tolist()) or (
-                    name in maiden_names.keys()):
-                # Change maiden name to registered name if relevant
-                if name in maiden_names.keys(): ## TODO make sure this works as expected
-                    name = maiden_names[name].split(', ')[0]
+            if name in attendees.Surname.tolist():
+
                 # Get the rows with this surname, possible multiple have same surname
                 possible_authors = attendees[
                     attendees['Surname'] == name][[
@@ -360,7 +373,7 @@ def find_author_papers(attendees, dataset, alt_names):
                 # Figure out which conference author it is and add possible
                 # names to processed alt names
                 potential_conference_corresponding = [a for a in
-                        processed_alt_names.keys() if name in a]
+                        processed_alt_names.keys() if df_name in a]
                 corresponding_conf = [a for a in
                         potential_conference_corresponding if a in
                         pre_2006s_and_WOS_standard]
@@ -382,11 +395,14 @@ def find_author_papers(attendees, dataset, alt_names):
                 ]
                 # Combine for all possibilities
                 to_check = char_11s_space + char_11s_period + pre_2006s_and_WOS_standard + full_names
+                print('to check: ', to_check)
                 # Now check all names against paper authors
                 for author in paper['authors']:
+                    # print('on author ', author['wos_standard'])
                     full_authors_found = []
                     if (author['full_name'].lower() in to_check) or (
                             author['wos_standard'].lower() in to_check):
+                        # print('inside full name found in candidates')
                         if len(possible_authors) == 1:
                             try:
                                 conference_authors[
@@ -410,9 +426,12 @@ def find_author_papers(attendees, dataset, alt_names):
                     for author_name in full_authors_found:
                         conference_authors[author_name].append(
                             paper['UID'])
+            # We need different processing if it's a maiden name
+            elif name in maiden_names.keys():
+                pass
     processed_alt_names = {k: list(set(v)) for k, v in
             processed_alt_names.items()}
-
+            
     return conference_authors, processed_alt_names
 
 

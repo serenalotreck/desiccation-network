@@ -51,7 +51,7 @@ def build_topic_model(topic_model_config):
 
 
 def main(paper_dataset, classed_cite_net, topic_model_config, attendees,
-         alt_names, cutoff, enrich_threshold, viz_threshold, save_clusters,
+         alt_names, cutoff, enrich_threshold, prod_threshold, save_clusters,
          outpath, outprefix):
 
     # Build topic model
@@ -66,7 +66,7 @@ def main(paper_dataset, classed_cite_net, topic_model_config, attendees,
     rec_model = RecommendationSystem(paper_dataset, classed_cite_net,
                                      topic_model, vec_model, rep_model, attendees, alt_names,
                                      outlier_reduction_params,
-                                     enrich_threshold, viz_threshold,
+                                     enrich_threshold, prod_threshold,
                                      save_clusters, outpath, outprefix)
 
     # Get recommendations
@@ -123,11 +123,11 @@ if __name__ == "__main__":
         'should be left as None, as few clusters will contain authors and '
         'they will only be present in smaller numbers')
     parser.add_argument(
-        '-viz_threshold',
+        '-prod_threshold',
         type=float,
         default=None,
-        help='Number between 0 and 1, the percent of authors to include '
-        'for graphs saved for visualization')
+        help='Number between 0 and 1, the percent of authors to consider '
+        'based on publications')
     parser.add_argument('--save_clusters',
                         action='store_true',
                         help='Whether or not to save cluster to author maps.')
@@ -158,5 +158,5 @@ if __name__ == "__main__":
     args.outpath = abspath(args.outpath)
 
     main(paper_dataset, classed_cite_net, topic_model_config, attendees,
-         alt_names, args.cutoff, args.enrich_threshold, args.viz_threshold,
+         alt_names, args.cutoff, args.enrich_threshold, args.prod_threshold,
          args.save_clusters, args.outpath, args.outprefix)

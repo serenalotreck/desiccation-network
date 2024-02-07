@@ -28,7 +28,7 @@ class RecommendationSystem():
                  alt_names,
                  outlier_reduction_params=None,
                  enrich_threshold=None,
-                 viz_threshold=None,
+                 prod_threshold=None,
                  save_clusters=True,
                  outpath='',
                  outprefix=''):
@@ -41,6 +41,8 @@ class RecommendationSystem():
                 attribute defined
             topic_model, BERTopic instance: topic model to use
             vec_model, CountVectorizer: vectorizer model for topic_model
+            rep_model, one of the representation model options in BERTopic:
+                representation model for topic_model
             attendees, df: columns are Surname, First_name, Affiliation, Country
             alt_names, df: columns are columns are Registration_surname,
                 Registration_first_name, Alternative_name_1..., Maiden_name
@@ -49,8 +51,8 @@ class RecommendationSystem():
                 in conference attendees. For smaller conferences, this should be
                 left as None, as few clusters will contain authors and they will
                 only be present in smaller numbers
-            viz_threshold, float: number between 0 and 1, the percent of authors
-                to include for graphs saved for visualization
+            prod_threshold, float: number between 0 and 1, the percent of authors
+                to consider as candidates based on number of publications
             outpath, str: path to save outputs
             outprefix, str: prefix to prepend to output filenames
         """
@@ -62,12 +64,9 @@ class RecommendationSystem():
         self.rep_model = rep_model
 
         # Process attendees to strip trailing whitespace and to lowercase
-        for col in attendees.columns:
-            attendees[col] = attendees[col].str.strip().str.lower()
-        self.attendees = attendees
-        self.alt_names = utils.process_alt_names(alt_names)
+        alt_names = utils.process_alt_names(alt_names)
         self.conference_authors, self.alt_names = utils.find_author_papers(
-            attendees, paper_dataset, self.alt_names)
+            attendees, paper_dataset, alt_names)
         self.all_possible_conf_names = [name for name_list in
                 self.alt_names.values() for name in name_list]
         self.all_possible_conf_names.extend([name for name
@@ -75,7 +74,7 @@ class RecommendationSystem():
                         self.all_possible_conf_names])
         self.outlier_reduction_params = outlier_reduction_params
         self.enrich_threshold = enrich_threshold
-        self.viz_threshold = viz_threshold
+        self.prod_threshold = prod_threshold
         self.save_clusters = save_clusters
         self.outpath = outpath
         self.outprefix = outprefix
@@ -199,19 +198,18 @@ class RecommendationSystem():
         edges = [(c[0], c[1], {
             'weight': w
         }) for c, w in co_author_joined_weights.items()]
-        nodes = [(ep, {'is_conference_attendee': True}) if ep in
+        nodes = [(ep, {'is_conference_attendee': 'yes'}) if ep in
                 self.all_possible_conf_names else (ep,
-                    {'is_conference_attendee': False}) for edge in edges for ep
+                    {'is_conference_attendee': 'no'}) for edge in edges for ep
                 in edge[:2]]
 
         # Build full network
         co_author_graph = nx.Graph()
         _ = co_author_graph.add_nodes_from(nodes)
         _ = co_author_graph.add_edges_from(edges)
-        self.co_author_net = co_author_graph
 
         # Threshold for visualization and save out
-        if self.viz_threshold is not None:
+        if self.prod_threshold is not None:
             if self.author_papers is None:
                 self.set_author_papers()
             paper_nums_df = pd.DataFrame.from_dict(
@@ -221,15 +219,11 @@ class RecommendationSystem():
                 columns=['num_papers']).sort_values(by='num_papers',
                                                     axis='index')
             idx_to_remove = round(paper_nums_df.shape[0] *
-                                                (1 - self.viz_threshold))
+                                                (1 - self.prod_threshold))
             rows_to_remove = paper_nums_df.iloc[:idx_to_remove, :]
             nodes_to_remove = rows_to_remove.index.tolist()
             _ = co_author_graph.remove_nodes_from(nodes_to_remove)
-        nx.write_graphml(co_author_graph,
-            f'{self.outpath}/{self.outprefix}_co_author_network.graphml')
-        print(
-            f'Saved co-author network as {self.outpath}/{self.outprefix}_co_author_network.graphml'
-        )
+        self.co_author_net = co_author_graph
 
     def create_co_citation_network(self):
         """
@@ -256,19 +250,18 @@ class RecommendationSystem():
         edges = [(e[0], e[1], {
             'weight': w
         }) for e, w in co_cite_joined_weights.items()]
-        nodes = [(ep, {'is_conference_attendee': True}) if ep in
+        nodes = [(ep, {'is_conference_attendee': 'yes'}) if ep in
                 self.all_possible_conf_names else (ep,
-                    {'is_conference_attendee': False}) for edge in edges for ep
+                    {'is_conference_attendee': 'no'}) for edge in edges for ep
                 in edge[:2]]
 
         # Build full network
         co_citation_graph = nx.Graph()
         _ = co_citation_graph.add_nodes_from(nodes)
         _ = co_citation_graph.add_edges_from(edges)
-        self.co_cite_net = co_citation_graph
 
         # Threshold for visualization and save out
-        if self.viz_threshold is not None:
+        if self.prod_threshold is not None:
             if self.author_papers is None:
                 self.set_author_papers()
             paper_nums_df = pd.DataFrame.from_dict(
@@ -278,15 +271,11 @@ class RecommendationSystem():
                 columns=['num_papers']).sort_values(by='num_papers',
                                                     axis='index')
             idx_to_remove = round(paper_nums_df.shape[0] * (1 -
-                self.viz_threshold))
+                self.prod_threshold))
             rows_to_remove = paper_nums_df.iloc[:idx_to_remove, :]
             nodes_to_remove = rows_to_remove.index.tolist()
             _ = co_citation_graph.remove_nodes_from(nodes_to_remove)
-        nx.write_graphml(co_citation_graph,
-            f'{self.outpath}/{self.outprefix}_co_citation_network.graphml')
-        print(
-            f'Saved co-citation network as {self.outpath}/{self.outprefix}_co_citation_network.graphml'
-        )
+        self.co_cite_net = co_citation_graph
 
     def cluster_citation_network(self):
         """
@@ -429,9 +418,9 @@ class RecommendationSystem():
                             cluster_type_scores
                         ]
                         mean_cluster_score = mean(normalized_cluster_type_scores)
+                        author_scores[clust_type] = mean_cluster_score
                     except KeyError:
-                        mean_cluster_score = 0
-                    author_scores[clust_type] = mean_cluster_score
+                        continue
 
                 # Topic cluster scores
                 ## TODO do this with hierarchical topic modeling -- for now, just
@@ -446,15 +435,16 @@ class RecommendationSystem():
                     for top in self.topics_to_authors.keys()
                 ]
                 mean_topic_score = mean(topic_scores)
-                author_scores['topic'] = mean_topic_score
+                if ('co_citation' in author_scores.keys()) and ('co_author' in author_scores.keys()):
+                    author_scores['topic'] = mean_topic_score
 
                 # Geography score
                 ## TODO implement
 
                 # Combine into composite score
-                author_overall_score = mean(author_scores.values())
-
-                all_scores[author] = author_overall_score
+                if len(author_scores) > 0:
+                    author_overall_score = mean(author_scores.values())
+                    all_scores[author] = author_overall_score
 
         return all_scores
 
@@ -497,8 +487,31 @@ class RecommendationSystem():
         num_to_return = round(cutoff * len(sorted_scores))
         candidates = list(sorted_scores.keys())[:num_to_return]
 
+        # Update the co-networks with candidates
+        new_co_cite_attrs = {}
+        for node, attrs in self.co_cite_net.nodes(data=True):
+            if node in candidates:
+                new_co_cite_attrs[node] = 'candidate'
+        nx.set_node_attributes(self.co_cite_net, new_co_cite_attrs,
+        'is_conference_attendee')
+        nx.write_graphml(self.co_cite_net,
+            f'{self.outpath}/{self.outprefix}_co_citation_network.graphml')
+        print(
+            f'Saved co-citation network as {self.outpath}/{self.outprefix}_co_citation_network.graphml'
+        )
         print(
             f'{len(candidates)} conference candidates were identified, out of '
             f'a total initial list of {len(sorted_scores)}.')
 
+        new_co_auth_attrs = {}
+        for node, attrs in self.co_author_net.nodes(data=True):
+            if node in candidates:
+                new_co_auth_attrs[node] = 'candidate'
+        nx.set_node_attributes(self.co_author_net, new_co_auth_attrs,
+        'is_conference_attendee')
+        nx.write_graphml(self.co_author_net,
+            f'{self.outpath}/{self.outprefix}_co_author_network.graphml')
+        print(
+            f'Saved co-author network as {self.outpath}/{self.outprefix}_co_author_network.graphml'
+        )
         return candidates
