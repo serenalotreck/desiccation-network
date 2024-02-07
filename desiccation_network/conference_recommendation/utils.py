@@ -232,11 +232,11 @@ def filter_papers(papers, key_df, kind, stringency='most'):
 def process_alt_names(alt_names):
     """
     Turn an alternative name dataframe into a dict indexed by WOS standard names self-reported by attendees.
-    
+
     parameters:
         alt_names, df: columns are columns are Registration_surname, Registration_first_name,
             Alternative_name_1..., Maiden_name
-        
+
     returns:
         alt_names_dict, dict: keys are "surname, initials", values are lists of tuple with (last name, first name)
             alternative names
@@ -270,14 +270,18 @@ def process_alt_names(alt_names):
 def find_author_papers(attendees, dataset, alt_names):
     """
     Find papers that were authored by conference attendees.
-    
+
     parameters:
         attendees, df: columns are Surname, First_name, Affiliation, Country
         dataset, list of dict: WoS papers with author and affiliation data
         alt_names, dict: formatted as per process_alt_names output
-        
+
     returns:
-        conference_authors, dict: keys are DesWorks recorded author names in WOS standard, values are WOS UIDs
+        conference_authors, dict: keys are DesWorks recorded author names in
+            WOS standard, values are WOS UIDs
+        processed_alt_names, dict: keys are DesWorks recorded author names in
+            WOS standard, values are lists of alternative names also in WOS
+            standard
     """
     ## TODO edge cases
     # 1. Names with internal punctuation (e.g. O'Neill, Farooq-E-Azam)
@@ -285,11 +289,8 @@ def find_author_papers(attendees, dataset, alt_names):
     # 3. Papers between 64-75 for authors with last names more than 8 characters
 
     # Maiden names
-    maiden_names = {
-        name[0]: wos_name
-        for wos_name, name_list in alt_names.items()
-        for name in name_list
-    }
+    maiden_names = {name[0]: wos_name for wos_name, name_list in
+            alt_names.items() for name in name_list}
 
     # Check for conference authors
     conference_authors = {
@@ -298,6 +299,13 @@ def find_author_papers(attendees, dataset, alt_names):
         for surname, first_name in zip(attendees['Surname'],
                                        attendees['First_name'])
     }
+    processed_alt_names = {
+        f'{surname.lower()}, {"".join([n[0] for n in first_name.split()]).lower()}':
+        []
+        for surname, first_name in zip(attendees['Surname'],
+                                       attendees['First_name'])
+    }
+
     for paper in dataset:
         # Check only surname first
         surnames = []
@@ -319,10 +327,10 @@ def find_author_papers(attendees, dataset, alt_names):
             if (name in attendees.Surname.tolist()) or (
                     name in maiden_names.keys()):
                 # Change maiden name to registered name if relevant
-                if name in maiden_names.keys():
+                if name in maiden_names.keys(): ## TODO make sure this works as expected
                     name = maiden_names[name].split(', ')[0]
                 # Get the rows with this surname, possible multiple have same surname
-                possible_authors = self.attendees[
+                possible_authors = attendees[
                     attendees['Surname'] == name][[
                         'Surname', 'First_name'
                     ]]
@@ -339,16 +347,25 @@ def find_author_papers(attendees, dataset, alt_names):
                 # Get alternative names for these possible authors
                 possible_first_names += [
                     name[1] for prename in pre_2006s_and_WOS_standard
-                    for name in additional_names[prename]
+                    for name in alt_names[prename]
                 ]
                 possible_initials += [
                     "".join([n[0] for n in name[1].split()])
                     for prename in pre_2006s_and_WOS_standard
-                    for name in additional_names[prename]
+                    for name in alt_names[prename]
                 ]
                 pre_2006s_and_WOS_standard += [
                     f'{name}, {initials}' for initials in possible_initials
                 ]
+                # Figure out which conference author it is and add possible
+                # names to processed alt names
+                potential_conference_corresponding = [a for a in
+                        processed_alt_names.keys() if name in a]
+                corresponding_conf = [a for a in
+                        potential_conference_corresponding if a in
+                        pre_2006s_and_WOS_standard]
+                assert len(corresponding_conf) == 1
+                processed_alt_names[corresponding_conf[0]].extend(pre_2006s_and_WOS_standard)
                 # Get possible oldest name format
                 char_11s_space = [
                     f'{name[:8]}, {initials}'
@@ -393,8 +410,10 @@ def find_author_papers(attendees, dataset, alt_names):
                     for author_name in full_authors_found:
                         conference_authors[author_name].append(
                             paper['UID'])
+    processed_alt_names = {k: list(set(v)) for k, v in
+            processed_alt_names.items()}
 
-    return conference_authors
+    return conference_authors, processed_alt_names
 
 
 def get_geographic_locations(dataset):
@@ -407,7 +426,7 @@ def get_geographic_locations(dataset):
     # Drop papers with no year
     papers_with_years = [paper for paper in dataset if 'year' in paper.keys()]
     # Sort papers by year
-    papers_chron_order_rev = sorted(self.paper_dataset, key=lambda x: x['year'],
+    papers_chron_order_rev = sorted(paper_dataset, key=lambda x: x['year'],
                                 reverse=True)
     # Get most recent affiliations
     author_affils = {}

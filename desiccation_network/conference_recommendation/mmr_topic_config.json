@@ -1,0 +1,27 @@
+{
+    "sent_trans_model": "allenai/scibert_scivocab_cased",
+    "umap_params": {
+        "n_neighbors": 15,
+        "n_components": 5,
+        "min_dist": 0,
+        "metric": "cosine",
+        "random_state": 42
+    },
+    "vectorizer_params": {
+        "stop_words": "english",
+        "ngram_range": [
+            1,
+            3
+        ],
+        "min_df": 10
+    },
+    "representation_model_name": "mmr",
+    "representation_params": {
+        "diversity": 0.3
+    },
+    "outlier_reduction": true,
+    "outlier_reduction_params": {
+        "strategy": "embeddings",
+        "threshold": 0.1
+    }
+}

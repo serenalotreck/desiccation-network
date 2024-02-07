@@ -7,6 +7,10 @@ import utils
 import pandas as pd
 import networkx as nx
 from infomap import Infomap
+from collections import defaultdict
+from itertools import combinations
+from networkx.algorithms.community.louvain import louvain_communities, louvain_partitions
+from statistics import mean
 from generic_tree_node import GenericTreeNode
 
 
@@ -18,6 +22,8 @@ class RecommendationSystem():
                  paper_dataset,
                  classed_citation_net,
                  topic_model,
+                 vec_model,
+                 rep_model,
                  attendees,
                  alt_names,
                  outlier_reduction_params=None,
@@ -35,7 +41,6 @@ class RecommendationSystem():
                 attribute defined
             topic_model, BERTopic instance: topic model to use
             vec_model, CountVectorizer: vectorizer model for topic_model
-            rep_model, one of several types: representation model for topic_model
             attendees, df: columns are Surname, First_name, Affiliation, Country
             alt_names, df: columns are columns are Registration_surname,
                 Registration_first_name, Alternative_name_1..., Maiden_name
@@ -53,15 +58,21 @@ class RecommendationSystem():
         self.paper_dataset = paper_dataset
         self.classed_citation_net = classed_citation_net
         self.topic_model = topic_model
+        self.vec_model = vec_model
+        self.rep_model = rep_model
 
         # Process attendees to strip trailing whitespace and to lowercase
         for col in attendees.columns:
             attendees[col] = attendees[col].str.strip().str.lower()
         self.attendees = attendees
-
         self.alt_names = utils.process_alt_names(alt_names)
-        self.conference_authors = utils.find_author_papers(
-            attendees, paper_dataset, alt_names)
+        self.conference_authors, self.alt_names = utils.find_author_papers(
+            attendees, paper_dataset, self.alt_names)
+        self.all_possible_conf_names = [name for name_list in
+                self.alt_names.values() for name in name_list]
+        self.all_possible_conf_names.extend([name for name
+                        in self.conference_authors.keys() if name not in
+                        self.all_possible_conf_names])
         self.outlier_reduction_params = outlier_reduction_params
         self.enrich_threshold = enrich_threshold
         self.viz_threshold = viz_threshold
@@ -109,21 +120,21 @@ class RecommendationSystem():
         """
         # Index by paper
         paper_authors = defaultdict(list)
-        for paper in papers:
+        for paper in self.paper_dataset:
             uid = paper['UID']
             for author in paper['authors']:
                 try:
                     paper_authors[uid].append(author['wos_standard'].lower())
                 except KeyError:
                     continue
-        self.apper_authors = paper_authors
+        self.paper_authors = paper_authors
 
     def set_tm_doc_df(self):
         """
         Preprocess documents for topic modeling and set as attribute
         """
-        data_with_class = utils.map_classes_to_jsonl(self.classed_cite_net,
-                                                     self.paper_data, False,
+        data_with_class = utils.map_classes_to_jsonl(self.classed_citation_net,
+                                                     self.paper_dataset, False,
                                                      'UID')
         abstracts_and_classes = {
             'UID': [],
@@ -147,7 +158,7 @@ class RecommendationSystem():
         """
         topics_to_authors = defaultdict(list)
         for paper, topic in self.paper_to_topic.items():
-            for author in paper_authors[paper]:
+            for author in self.paper_authors[paper]:
                 topics_to_authors[topic].append(author)
         self.topics_to_authors = topics_to_authors
 
@@ -173,7 +184,7 @@ class RecommendationSystem():
             authors = []
             for author in paper['authors']:
                 try:
-                    authors.append(author['wos_standard'])
+                    authors.append(author['wos_standard'].lower())
                 except KeyError:
                     continue
             all_author_pairs = combinations(authors, 2)
@@ -188,9 +199,14 @@ class RecommendationSystem():
         edges = [(c[0], c[1], {
             'weight': w
         }) for c, w in co_author_joined_weights.items()]
+        nodes = [(ep, {'is_conference_attendee': True}) if ep in
+                self.all_possible_conf_names else (ep,
+                    {'is_conference_attendee': False}) for edge in edges for ep
+                in edge[:2]]
 
         # Build full network
         co_author_graph = nx.Graph()
+        _ = co_author_graph.add_nodes_from(nodes)
         _ = co_author_graph.add_edges_from(edges)
         self.co_author_net = co_author_graph
 
@@ -203,12 +219,13 @@ class RecommendationSystem():
                  for k, v in self.author_papers.items()},
                 orient='index',
                 columns=['num_papers']).sort_values(by='num_papers',
-                                                    axis='columns')
-            rows_to_remove = paper_nums_df.iloc[:paper_nums_df.shape[0] *
-                                                (1 - self.viz_threshold), :]
+                                                    axis='index')
+            idx_to_remove = round(paper_nums_df.shape[0] *
+                                                (1 - self.viz_threshold))
+            rows_to_remove = paper_nums_df.iloc[:idx_to_remove, :]
             nodes_to_remove = rows_to_remove.index.tolist()
             _ = co_author_graph.remove_nodes_from(nodes_to_remove)
-        co_author_graph.write_graphml(
+        nx.write_graphml(co_author_graph,
             f'{self.outpath}/{self.outprefix}_co_author_network.graphml')
         print(
             f'Saved co-author network as {self.outpath}/{self.outprefix}_co_author_network.graphml'
@@ -225,9 +242,9 @@ class RecommendationSystem():
         self.set_paper_authors()
 
         co_citation_weights = defaultdict(int)
-        for edge in graph.edges:
-            for author1 in paper_authors[edge[0]]:
-                for author2 in paper_authors[edge[1]]:
+        for edge in self.classed_citation_net.edges:
+            for author1 in self.paper_authors[edge[0]]:
+                for author2 in self.paper_authors[edge[1]]:
                     if author1 != author2:
                         author_pair = tuple(set([author1, author2]))
                         co_citation_weights[author_pair] += 1
@@ -239,9 +256,14 @@ class RecommendationSystem():
         edges = [(e[0], e[1], {
             'weight': w
         }) for e, w in co_cite_joined_weights.items()]
+        nodes = [(ep, {'is_conference_attendee': True}) if ep in
+                self.all_possible_conf_names else (ep,
+                    {'is_conference_attendee': False}) for edge in edges for ep
+                in edge[:2]]
 
         # Build full network
         co_citation_graph = nx.Graph()
+        _ = co_citation_graph.add_nodes_from(nodes)
         _ = co_citation_graph.add_edges_from(edges)
         self.co_cite_net = co_citation_graph
 
@@ -254,12 +276,13 @@ class RecommendationSystem():
                  for k, v in self.author_papers.items()},
                 orient='index',
                 columns=['num_papers']).sort_values(by='num_papers',
-                                                    axis='columns')
-            rows_to_remove = paper_nums_df.iloc[:paper_nums_df.shape[0] *
-                                                (1 - self.viz_threshold), :]
+                                                    axis='index')
+            idx_to_remove = round(paper_nums_df.shape[0] * (1 -
+                self.viz_threshold))
+            rows_to_remove = paper_nums_df.iloc[:idx_to_remove, :]
             nodes_to_remove = rows_to_remove.index.tolist()
             _ = co_citation_graph.remove_nodes_from(nodes_to_remove)
-        co_citation_graph.write_graphml(
+        nx.write_graphml(co_citation_graph,
             f'{self.outpath}/{self.outprefix}_co_citation_network.graphml')
         print(
             f'Saved co-citation network as {self.outpath}/{self.outprefix}_co_citation_network.graphml'
@@ -286,10 +309,10 @@ class RecommendationSystem():
         distances between each author and all clusters.
         """
         print('\nPerforming Louvain clustering on co-author network...')
-        communities = nx.louvain_communities(self.co_author_net, seed=1234)
-        self.co_author_partitions = nx.louvain_partitions(self.co_author_net,
-                                                          seed=1234)
+        self.co_author_partitions = list(louvain_partitions(self.co_author_net,
+                                                          seed=1234))
         co_author_tree = GenericTreeNode('co-author')
+        co_author_tree.parse_children(self.co_author_partitions)
         co_author_tree.get_distances()
         self.co_author_clusters_to_authors = co_author_tree.get_cluster_membership(
         )
@@ -301,10 +324,10 @@ class RecommendationSystem():
         distances between each author and all clusters.
         """
         print('\nPerforming Louvain clustering on co-citation network...')
-        communities = nx.louvain_communities(self.co_cite_net, seed=1234)
-        self.co_cite_partitions = nx.louvain_partitions(self.co_author_net,
-                                                        seed=1234)
+        self.co_cite_partitions = list(louvain_partitions(self.co_cite_net,
+                                                        seed=1234))
         co_cite_tree = GenericTreeNode('co-author')
+        co_cite_tree.parse_children(self.co_cite_partitions)
         co_cite_tree.get_distances()
         self.co_cite_clusters_to_authors = co_cite_tree.get_cluster_membership(
         )
@@ -319,10 +342,10 @@ class RecommendationSystem():
         self.set_tm_doc_df()
         docs = self.tm_doc_df.abstract.values.tolist()
         topics, probs = self.topic_model.fit_transform(docs)
-        if outlier_reduction_params is not None:
+        if self.outlier_reduction_params is not None:
             new_topics = self.topic_model.reduce_outliers(
                 docs, topics, **self.outlier_reduction_params)
-            self.topic_model.update(docs,
+            self.topic_model.update_topics(docs,
                                     topics=new_topics,
                                     vectorizer_model=self.vec_model,
                                     representation_model=self.rep_model)
@@ -333,7 +356,9 @@ class RecommendationSystem():
         }
         doc_tops = self.topic_model.get_document_info(docs)
         doc_tops['UID'] = self.tm_doc_df.index
-        self.paper_to_topic = doc_tops[['UID', 'Topic']].to_dict()
+        paper_to_topic_df = doc_tops[['UID', 'Topic']]
+        self.paper_to_topic = {row.UID: row.Topic for idx, row in
+                paper_to_topic_df.iterrows()}
         self.set_topics_to_authors()
 
     def calculate_community_enrichment(self):
@@ -362,7 +387,7 @@ class RecommendationSystem():
                     if auth in self.conference_authors.keys()
                 ]
                 total_num = len(authors)
-                enrich_prop = num_conf / total_num
+                enrich_prop = len(num_conf) / total_num
                 clust_enrich[clust] = enrich_prop
             enrichments[clust_type] = clust_enrich
         self.enriched_clusters = enrichments
@@ -392,16 +417,20 @@ class RecommendationSystem():
                 for clust_type, cluster_distances in {
                         ##TODO 'directed_citation': self.cite_ids_to_authors,
                         'co_citation': self.co_cite_cluster_distances,
-                        'co_author': self.co_authors_cluster_distances
+                        'co_author': self.co_author_cluster_distances
                 }.items():
-                    cluster_type_scores = [
-                        cluster_distances[author][clust_id]
-                        for clust_id in self.enriched_clusters[clust_type]
-                    ]
-                    normalized_cluster_type_scores = [
-                        sc / max(cluster_type_scores)
-                    ]
-                    mean_cluster_score = mean(normalized_cluster_type_scores)
+                    try:
+                        cluster_type_scores = [
+                            cluster_distances[author][clust_id]
+                            for clust_id in self.enriched_clusters[clust_type]
+                        ]
+                        normalized_cluster_type_scores = [
+                            1 - (sc / max(cluster_type_scores)) for sc in
+                            cluster_type_scores
+                        ]
+                        mean_cluster_score = mean(normalized_cluster_type_scores)
+                    except KeyError:
+                        mean_cluster_score = 0
                     author_scores[clust_type] = mean_cluster_score
 
                 # Topic cluster scores
@@ -411,7 +440,7 @@ class RecommendationSystem():
                 author_topics = []
                 for topic, authors in self.topics_to_authors.items():
                     if author in authors:
-                        author_topics.append(topics)
+                        author_topics.append(topic)
                 topic_scores = [
                     1 if top not in self.enriched_clusters['topic'] else 0
                     for top in self.topics_to_authors.keys()
@@ -425,7 +454,7 @@ class RecommendationSystem():
                 # Combine into composite score
                 author_overall_score = mean(author_scores.values())
 
-                all_scores[author].append(author_overall_score)
+                all_scores[author] = author_overall_score
 
         return all_scores
 
@@ -455,7 +484,7 @@ class RecommendationSystem():
         self.cluster_co_author_network()
 
         # Get enrichments
-        self.calculate_community_enrichments()
+        self.calculate_community_enrichment()
 
         # Apply heuristic calculation
         all_scores = self.calculate_candidate_scores()

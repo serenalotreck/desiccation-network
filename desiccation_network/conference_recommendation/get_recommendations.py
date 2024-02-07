@@ -9,6 +9,7 @@ import sys
 import json
 import jsonlines
 import networkx as nx
+from ast import literal_eval
 from sentence_transformers import SentenceTransformer
 from umap import UMAP
 from hdbscan import HDBSCAN
@@ -30,11 +31,12 @@ def build_topic_model(topic_model_config):
     embedding_model = SentenceTransformer(
         topic_model_config['sent_trans_model'])
     umap_model = UMAP(**topic_model_config['umap_params'])
+    topic_model_config['vectorizer_params']['ngram_range'] = tuple(topic_model_config['vectorizer_params']['ngram_range'])
     vectorizer_model = CountVectorizer(
         **topic_model_config['vectorizer_params'])
     if topic_model_config['representation_model_name'] == 'openai':
         with open(abspath(topic_model_config['openai_api_key_path'])) as myf:
-            API_KEY = myf.read().split(' ')[-1]
+            API_KEY = literal_eval(myf.read().split(' ')[-1].strip())
         client = openai.OpenAI(api_key=API_KEY)
         representation_model = OpenAI(
             client, **topic_model_config['representation_params'])
@@ -45,7 +47,7 @@ def build_topic_model(topic_model_config):
     return BERTopic(embedding_model=embedding_model,
                     umap_model=umap_model,
                     representation_model=representation_model,
-                    vectorizer_model=vectorizer_model)
+                    vectorizer_model=vectorizer_model), vectorizer_model, representation_model
 
 
 def main(paper_dataset, classed_cite_net, topic_model_config, attendees,
@@ -53,7 +55,7 @@ def main(paper_dataset, classed_cite_net, topic_model_config, attendees,
          outpath, outprefix):
 
     # Build topic model
-    topic_model = build_topic_model(topic_model_config)
+    topic_model, vec_model, rep_model = build_topic_model(topic_model_config)
     if topic_model_config['outlier_reduction']:
         outlier_reduction_params = topic_model_config[
             'outlier_reduction_params']
@@ -62,19 +64,19 @@ def main(paper_dataset, classed_cite_net, topic_model_config, attendees,
 
     # Build recommendation instance
     rec_model = RecommendationSystem(paper_dataset, classed_cite_net,
-                                     topic_model, attendees, alt_names,
+                                     topic_model, vec_model, rep_model, attendees, alt_names,
                                      outlier_reduction_params,
                                      enrich_threshold, viz_threshold,
                                      save_clusters, outpath, outprefix)
 
     # Get recommendations
-    recs = rec_model.calculate_conference_candidates(cutoff)
+    recs = rec_model.get_conference_candidates(cutoff)
 
     # Save
     print('\nSaving output candidates...')
     savename = f'{outpath}/{outprefix}_top_{cutoff}_candidates.txt'
     with open(savename, 'w') as myf:
-        myf.writelines(recs)
+        myf.write('\n'.join(recs))
     print(f'Saved output as {savename}')
 
     print('\nDone!')
