@@ -9,6 +9,7 @@ import networkx as nx
 from infomap import Infomap
 from collections import defaultdict
 from itertools import combinations
+import numpy as np
 from networkx.algorithms.community.louvain import louvain_communities, louvain_partitions
 from statistics import mean
 from generic_tree_node import GenericTreeNode
@@ -65,10 +66,9 @@ class RecommendationSystem():
 
         # Process attendees to strip trailing whitespace and to lowercase
         alt_names = utils.process_alt_names(alt_names)
-        self.conference_authors, self.alt_names = utils.find_author_papers(
+        self.conference_authors, alt_names = utils.find_author_papers(
             attendees, paper_dataset, alt_names)
-        self.all_possible_conf_names = [name for name_list in
-                self.alt_names.values() for name in name_list]
+        self.all_possible_conf_names = list(alt_names.keys())
         self.all_possible_conf_names.extend([name for name
                         in self.conference_authors.keys() if name not in
                         self.all_possible_conf_names])
@@ -111,6 +111,7 @@ class RecommendationSystem():
                     author_papers[author['wos_standard'].lower()].append(uid)
                 except KeyError:
                     continue
+        author_papers = {k: list(set(v)) for k, v in author_papers.items()}
         self.author_papers = author_papers
 
     def set_paper_authors(self):
@@ -126,6 +127,7 @@ class RecommendationSystem():
                     paper_authors[uid].append(author['wos_standard'].lower())
                 except KeyError:
                     continue
+        paper_authors = {k: list(set(v)) for k, v in paper_authors.items()}
         self.paper_authors = paper_authors
 
     def set_tm_doc_df(self):
@@ -159,6 +161,7 @@ class RecommendationSystem():
         for paper, topic in self.paper_to_topic.items():
             for author in self.paper_authors[paper]:
                 topics_to_authors[topic].append(author)
+        topics_to_authors = {k: list(set(v)) for k, v in topics_to_authors.items()}
         self.topics_to_authors = topics_to_authors
 
     def set_geographic_locations(self):
@@ -373,13 +376,87 @@ class RecommendationSystem():
             for clust, authors in clusters_to_authors.items():
                 num_conf = [
                     auth for auth in authors
-                    if auth in self.conference_authors.keys()
+                    if auth in self.all_possible_conf_names ## This double counts authors with two alternative names in one cluster
                 ]
                 total_num = len(authors)
                 enrich_prop = len(num_conf) / total_num
                 clust_enrich[clust] = enrich_prop
             enrichments[clust_type] = clust_enrich
         self.enriched_clusters = enrichments
+
+    @staticmethod
+    def calculate_topic_pa_score(author, topics_to_authors, enriched_clusters):
+        """
+        Calculates presence/absence score for a given author.
+
+        parameters:
+            author, str: author
+            topics_to_authors, dict: keys are topics, values are lists of authors
+            enriched_clusters: list, enriched clusters
+
+        returns:
+            mean_topic_score
+        """
+        # Scoring: 1 if the cluster is not enriched, 0 if it is, average for all
+        # clusters containing the author
+        author_topics = []
+        for topic, authors in topics_to_authors.items():
+            if author in authors:
+                author_topics.append(topic)
+        topic_scores = [
+            1 if top not in enriched_clusters else 0
+            for top in author_topics
+        ]
+        # Some docs are dropped for being truly interdisciplinary and not having
+        # a class, have to account for that here
+        if len(topic_scores) == 0:
+            return 0
+        else:
+            mean_topic_score = mean(topic_scores)
+            return mean_topic_score
+        
+    @staticmethod
+    def calculate_mean_hier_score(author, cluster_distances, enriched_clusters):
+        """
+        Calculate mean distance score for a given author for a
+        hierarcically-clustered network.
+
+        parameters:
+            author, str: author
+            cluster_distances, dict of dict: cluster distances
+            enriched_clusters: list, enriched clusters
+
+        returns:
+            mean_cluster_score, float: score
+        """
+        # Get absolute scores
+        try:
+            cluster_type_scores = [
+                cluster_distances[author][clust_id] for clust_id in enriched_clusters
+                ]
+            # Currently, the closer you are, the lower your score.
+            # We want to privilege being some optimal distance from the enriched
+            # clusters, because too close and they'll likely already be in the
+            # interpersonal network we're trying to expand, but too far and they may
+            # be irrelevant. As a first attempt, we'll use distance from the 25th
+            # percentile as the score, and normalize on either side; so that being
+            # in the same cluster as conference authors is the same penalty as being
+            # maximally far away.
+            penalty_threshold = np.percentile(cluster_type_scores, 25)
+            close_side_distance = penalty_threshold - 0
+            far_side_distance = max(cluster_type_scores) - penalty_threshold ## May want to change this to the max possible rather than the max observed
+            cluster_scores = []
+            for sc in cluster_type_scores:
+                dist = penalty_threshold - sc
+                if dist < 0:
+                    normed = 1 - (abs(dist)/far_side_distance)
+                else:
+                    normed = 1 - (dist/close_side_distance)
+                cluster_scores.append(normed)
+            mean_cluster_score = mean(cluster_scores)
+            return mean_cluster_score
+        except KeyError:
+            return 0
 
     def calculate_candidate_scores(self):
         """
@@ -404,37 +481,14 @@ class RecommendationSystem():
                 author_scores = {}
                 # Hierarchically-clustered network scores
                 for clust_type, cluster_distances in {
-                        ##TODO 'directed_citation': self.cite_ids_to_authors,
+                        #'directed_citation': self.cite_ids_to_authors,
                         'co_citation': self.co_cite_cluster_distances,
                         'co_author': self.co_author_cluster_distances
                 }.items():
-                    try:
-                        cluster_type_scores = [
-                            cluster_distances[author][clust_id]
-                            for clust_id in self.enriched_clusters[clust_type]
-                        ]
-                        normalized_cluster_type_scores = [
-                            1 - (sc / max(cluster_type_scores)) for sc in
-                            cluster_type_scores
-                        ]
-                        mean_cluster_score = mean(normalized_cluster_type_scores)
-                        author_scores[clust_type] = mean_cluster_score
-                    except KeyError:
-                        continue
+                    author_scores[clust_type] = self.calculate_mean_hier_score(author, cluster_distances, self.enriched_clusters[clust_type])
 
                 # Topic cluster scores
-                ## TODO do this with hierarchical topic modeling -- for now, just
-                ## 1 if the cluster isn't enriched, 0 if it is, average for all
-                ## clusters containing this author
-                author_topics = []
-                for topic, authors in self.topics_to_authors.items():
-                    if author in authors:
-                        author_topics.append(topic)
-                topic_scores = [
-                    1 if top not in self.enriched_clusters['topic'] else 0
-                    for top in self.topics_to_authors.keys()
-                ]
-                mean_topic_score = mean(topic_scores)
+                mean_topic_score = self.calculate_topic_pa_score(author, self.topics_to_authors, self.enriched_clusters['topic'])
                 if ('co_citation' in author_scores.keys()) and ('co_author' in author_scores.keys()):
                     author_scores['topic'] = mean_topic_score
 
@@ -444,7 +498,13 @@ class RecommendationSystem():
                 # Combine into composite score
                 if len(author_scores) > 0:
                     author_overall_score = mean(author_scores.values())
-                    all_scores[author] = author_overall_score
+                
+                # If the author is a previous attendee, wipe score to 0
+                if author in self.all_possible_conf_names:
+                    author_overall_score = 0
+                
+                # Add to all scores
+                all_scores[author] = author_overall_score
 
         return all_scores
 

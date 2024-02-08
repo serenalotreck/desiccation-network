@@ -388,12 +388,42 @@ def conference_authors():
 @pytest.fixture
 def processed_alt_names():
     return {
-        'one two, p': ['one, person12 atc'],
-        'three, p': [],
-        'four, p': ['four, person4 mi', 'four, person4 m'],
-        'five, p': ['alive, person5'],
-        'six, pm': ['six, person middle'],
-        'seven, p': ['seven, pm', 'seven, person7 mi']
+        'one, patc': 'one two, p',
+        'one, person12 atc': 'one two, p',
+        'one two, p': 'one two, p',
+        'one two, person12': 'one two, p',
+        'one patc': 'one two, p',
+        'one two p': 'one two, p',
+        'three, p': 'three, p',
+        'three, person3': 'three, p',
+        'three p': 'three, p',
+        'four, person4': 'four, p',
+        'four, p': 'four, p',
+        'four p': 'four, p',
+        'four, person4 mi': 'four, p',
+        'four, pmi': 'four, p',
+        'four pmi': 'four, p',
+        'four, person4 m': 'four, p',
+        'four, pm': 'four, p',
+        'four pm': 'four, p',
+        'five, person5': 'five, p',
+        'five, p': 'five, p',
+        'five p': 'five, p',
+        'alive, person5': 'five, p',
+        'alive, p': 'five, p',
+        'alive p': 'five, p',
+        'six, person6 m': 'six, pm',
+        'six, pm': 'six, pm',
+        'six pm': 'six, pm',
+        'six, person6 middle': 'six, pm',
+        'seven, person7': 'seven, p',
+        'seven, p': 'seven, p',
+        'seven p': 'seven, p',
+        'seven, pm': 'seven, p',
+        'seven pm': 'seven, p',
+        'seven, person7 mi': 'seven, p',
+        'seven, pmi': 'seven, p',
+        'seven pmi': 'seven, p'
     }
 
 
