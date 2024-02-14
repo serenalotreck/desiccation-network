@@ -7,7 +7,7 @@ import pytest
 from lxml import etree
 import sys
 
-sys.path.append('../citation_network/')
+sys.path.append('../desiccation_network/preprocess_data/')
 import wos_pull_papers as wpp
 
 ######################## update_refs_with_abstracts ############################
@@ -298,6 +298,74 @@ def paper_json_with_refs():
         "This study was carried out in Karaj, Iran in 2017 and 2018 to assess the efficacy of summer sowing (June 22) versus spring sowing (April 20) of six sugar beet genotypes at three harvest times (October 13, November 2, and November 23) via the measurement of catalase (CAT), malondialdehyde (MDA), and agronomic traits. Results showed that in both sowing dates, higher growth and temperature were related to higher CAT activity and MDA content, and the maximum MDA and CAT activity were observed in 1700-1900 growth degree days (GDD). Genotypes responded to the shortening of the growth period differently. The best genotypes for summer sowing were found to be 'Paya', 'IR7', and 'Pars' when a combination of the least response to delayed sowing and the highest root yield in the summer sowing conditions was considered. Compared to the spring sowing, the summer sowing decreased white sugar yield (WSY) of all cultivars by 28.3-50.5% in the first year and 5.3-32.4% in the second year. 'Paya' and 'IR7' were the most capable cultivars in preserving WSY so that they maintained 70% of their yields. In addition, the genotypes exhibited their highest WSY at the November 23 harvest date so that root, raw sugar and white sugar yields were 41.21, 6.35 and 5.02 t ha(-1) higher at the November 23 harvest date than at the October 13 harvest date, respectively. Based on the results, if summer-sown sugar beets are considered as a cash crop in rotation with grains and there is no limitation on water supply, it can then be recommended to farmers as it can make good profits for them.",
         'year':
         '2021',
+        'authors': [
+            {
+                'seq_no': "1",
+                'role': "author",
+                'addr_no': "1",
+                'display_name': 'Vahidi, H.',
+                'full_name': 'Vahidi, H.',
+                'wos_standard': 'Vahidi, H',
+                'first_name': 'H.',
+                'last_name': 'Vahidi'
+            },
+            {
+                'seq_no': "2",
+                'role': "author",
+                'addr_no': "1",
+                'display_name': 'Mirshekari, B.',
+                'full_name': 'Mirshekari, B.',
+                'wos_standard': 'Mirshekari, B',
+                'first_name': 'B.',
+                'last_name': 'Mirshekari',
+                'email_addr': 'b.mirshekari@iaut.ac.ir',
+                'reprint': "Y"
+            },
+            {
+                'seq_no': "3",
+                'role': "author",
+                'addr_no': "2",
+                'display_name': 'Hemayati, S. S.',
+                'full_name': 'Hemayati, S. S.',
+                'wos_standard': 'Hemayati, SS',
+                'first_name': 'S. S.',
+                'last_name': 'Hemayati'
+            },
+            {
+                'seq_no': "4",
+                'role': "author",
+                'addr_no': "2",
+                'display_name': 'Rajabi, A.',
+                'full_name': 'Rajabi, A.',
+                'wos_standard': 'Rajabi, A',
+                'first_name': 'A.',
+                'last_name': 'Rajabi'
+            },
+            {
+                'seq_no': "5",
+                'role': "author",
+                'addr_no': "1",
+                'display_name': 'Yarniya, M.',
+                'full_name': 'Yarniya, M.',
+                'wos_standard': 'Yarniya, M',
+                'first_name': 'M.',
+                'last_name': 'Yarniya'
+            }
+            ],
+        'addresses': [
+            {
+                'addr_no': "1",
+                'full_address': 'Islamic Azad Univ, Tabriz Branch, Dept Agron, Tabriz, Iran',
+                'city': 'Tabriz',
+                'country': 'Iran'
+            },
+            {
+                'addr_no': "2",
+                'full_address': 'Sugar Beet Seed Inst, Organ Agr Res, Educ, Extens, Karaj, Iran',
+                'city': 'Karaj',
+                'country': 'Iran'
+            }
+            ],
         'paper_keywords': [
             'CAT', 'MDA', 'root yield', 'sugar yield', 'WUE'
             ],
@@ -340,17 +408,87 @@ def paper_json_with_refs():
 @pytest.fixture
 def paper_json_as_reference():
     return {
-        'UID': 'WOS:000623021900024',
+        'UID':
+        'WOS:000623021900024',
         'title':
         'COMPARISON OF SPRING AND SUMMER SOWING OF SUGAR BEET GENOTYPES AT DIFFERENT HARVEST DATES TO SHIFT FROM TRADITIONAL CROP TO CASH CROP IN CENTRAL IRAN',
         'abstract':
         "This study was carried out in Karaj, Iran in 2017 and 2018 to assess the efficacy of summer sowing (June 22) versus spring sowing (April 20) of six sugar beet genotypes at three harvest times (October 13, November 2, and November 23) via the measurement of catalase (CAT), malondialdehyde (MDA), and agronomic traits. Results showed that in both sowing dates, higher growth and temperature were related to higher CAT activity and MDA content, and the maximum MDA and CAT activity were observed in 1700-1900 growth degree days (GDD). Genotypes responded to the shortening of the growth period differently. The best genotypes for summer sowing were found to be 'Paya', 'IR7', and 'Pars' when a combination of the least response to delayed sowing and the highest root yield in the summer sowing conditions was considered. Compared to the spring sowing, the summer sowing decreased white sugar yield (WSY) of all cultivars by 28.3-50.5% in the first year and 5.3-32.4% in the second year. 'Paya' and 'IR7' were the most capable cultivars in preserving WSY so that they maintained 70% of their yields. In addition, the genotypes exhibited their highest WSY at the November 23 harvest date so that root, raw sugar and white sugar yields were 41.21, 6.35 and 5.02 t ha(-1) higher at the November 23 harvest date than at the October 13 harvest date, respectively. Based on the results, if summer-sown sugar beets are considered as a cash crop in rotation with grains and there is no limitation on water supply, it can then be recommended to farmers as it can make good profits for them.",
-        'year': '2021',
-        'dynamic_keys': ['Chemistry', 'Membrane Science', 'Sugar Beet'],
-        'static_keys': ['Agriculture, Multidisciplinary', 'Agriculture'],
+        'year':
+        '2021',
+        'authors': [
+            {
+                'seq_no': "1",
+                'role': "author",
+                'addr_no': "1",
+                'display_name': 'Vahidi, H.',
+                'full_name': 'Vahidi, H.',
+                'wos_standard': 'Vahidi, H',
+                'first_name': 'H.',
+                'last_name': 'Vahidi'
+            },
+            {
+                'seq_no': "2",
+                'role': "author",
+                'addr_no': "1",
+                'display_name': 'Mirshekari, B.',
+                'full_name': 'Mirshekari, B.',
+                'wos_standard': 'Mirshekari, B',
+                'first_name': 'B.',
+                'last_name': 'Mirshekari',
+                'email_addr': 'b.mirshekari@iaut.ac.ir',
+                'reprint': "Y"
+            },
+            {
+                'seq_no': "3",
+                'role': "author",
+                'addr_no': "2",
+                'display_name': 'Hemayati, S. S.',
+                'full_name': 'Hemayati, S. S.',
+                'wos_standard': 'Hemayati, SS',
+                'first_name': 'S. S.',
+                'last_name': 'Hemayati'
+            },
+            {
+                'seq_no': "4",
+                'role': "author",
+                'addr_no': "2",
+                'display_name': 'Rajabi, A.',
+                'full_name': 'Rajabi, A.',
+                'wos_standard': 'Rajabi, A',
+                'first_name': 'A.',
+                'last_name': 'Rajabi'
+            },
+            {
+                'seq_no': "5",
+                'role': "author",
+                'addr_no': "1",
+                'display_name': 'Yarniya, M.',
+                'full_name': 'Yarniya, M.',
+                'wos_standard': 'Yarniya, M',
+                'first_name': 'M.',
+                'last_name': 'Yarniya'
+            }
+            ],
+        'addresses': [
+            {
+                'addr_no': "1",
+                'full_address': 'Islamic Azad Univ, Tabriz Branch, Dept Agron, Tabriz, Iran',
+                'city': 'Tabriz',
+                'country': 'Iran'
+            },
+            {
+                'addr_no': "2",
+                'full_address': 'Sugar Beet Seed Inst, Organ Agr Res, Educ, Extens, Karaj, Iran',
+                'city': 'Karaj',
+                'country': 'Iran'
+            }
+            ],
         'paper_keywords': [
             'CAT', 'MDA', 'root yield', 'sugar yield', 'WUE'
-            ]
+            ],
+        'dynamic_keys': ['Chemistry', 'Membrane Science', 'Sugar Beet'],
+        'static_keys': ['Agriculture, Multidisciplinary', 'Agriculture']
     }
 
 

@@ -182,16 +182,20 @@ def convert_xml_paper(paper, kind):
             for address_list in fullrec.findall(
                     '{http://clarivate.com/schema/wok5.30/public/FullRecord}addresses'
             ):
-                for address_instance in address_list.findall(
-                         '{http://clarivate.com/schema/wok5.30/public/FullRecord}address'
-                ):
-                    address = {}
-                    for attrib_name, val in address_instance.attrib.items():
-                        address[attrib_name] = val
-                    for elt in address_instance:
-                        tagname = elt.tag.split('}')[-1]
-                        address[tagname] = elt.text
-                    addresses.apend(address)
+                for address_name in address_list.findall('{http://clarivate.com/schema/wok5.30/public/FullRecord}address_name'):
+                    for address_instance in address_name.findall(
+                             '{http://clarivate.com/schema/wok5.30/public/FullRecord}address_spec'
+                    ):
+                        address = {}
+                        for attrib_name, val in address_instance.attrib.items():
+                            address[attrib_name] = val
+                        for elt in address_instance:
+                            tagname = elt.tag.split('}')[-1]
+                            if tagname in ['organizations', 'suborganizations']:
+                                continue
+                            else:
+                                address[tagname] = elt.text
+                        addresses.append(address)
             paper_json['addresses'] = addresses
             # Abstract
             for abstracts in fullrec.findall(
