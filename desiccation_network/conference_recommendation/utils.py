@@ -5,7 +5,9 @@ Author: Serena G. Lotreck
 """
 from itertools import product
 import numpy as np
-from collections import defaultdict
+from collections import defaultdict, Counter
+import pycountry
+import pandas as pd
 
 
 def calculate_dyadic_citation_freqs(graph):
@@ -378,6 +380,62 @@ def find_author_papers(attendees, dataset, alt_names):
     return conference_authors, name_map
 
 
+def get_iso_alpha(country):
+    """
+    Get Alpha-3 name for country. Uses manual mapping for specific WOS country names
+    that don't match to the conversion database. Note that this list is specific
+    to failures for our own dataset, and may need to be expanded to work with a
+    larger dataset.
+
+    parameters:
+        country, str: country to convert
+
+    returns:
+        iso_name, str: three-letter country code
+    """
+    # Get all mappings
+    country_conversions = {country.name: country.alpha_3 for country in pycountry.countries}
+    wos_missed_dict = {'USA': 'USA',
+             'Peoples R China': 'CHN',
+             'England': 'GBR',
+             'South Korea': 'KOR',
+             'Russia': 'RUS',
+             'Czech Republic': 'CZE',
+             'Iran': 'IRN',
+             'Taiwan': 'TWN',
+             'Turkey': 'TUR',
+             'Scotland': 'GBR',
+             'Wales': 'GBR',
+             'U Arab Emirates': 'ARE',
+             'Vietnam': 'VNM',
+             'North Ireland': 'GBR',
+             'Dominican Rep': 'DOM',
+             'Cote Ivoire': 'CIV',
+             'Brunei': 'BRN',
+             'DEM REP CONGO': 'COD',
+             'Syria': 'SYR',
+             'Kosovo': 'XKX', # Note: Kosovo is not listed as an ISO standard country. The unofficial 2 and 3-digit codes are used by the European Commission and others until Kosovo is assigned an ISO code.(from https://knowledgecenter.zuora.com/Quick_References/Country%2C_State%2C_and_Province_Codes/A_Country_Names_and_Their_ISO_Codes)
+             'BELARUS': 'BLR',
+             'Venezuela': 'VEN',
+             'Bolivia': 'BOL',
+             'North Korea': 'PRK',
+             'Palestine': 'PSE',
+             'Laos': 'LAO',
+             'Papua N Guinea': 'PNG'}
+
+    # Map country and return
+    try:
+        iso_name = country_conversions[country]
+        return iso_name
+    except KeyError:
+        try:
+            iso_name = wos_missed_dict[country]
+            return iso_name
+        except KeyError:
+            print(f'No three-letter code found for country {country}, returning None')
+            return
+
+
 def get_geographic_locations(dataset):
     """
     Get the country name of the most recent affiliation for all authors.
@@ -387,14 +445,63 @@ def get_geographic_locations(dataset):
     """
     # Drop papers with no year
     papers_with_years = [paper for paper in dataset if 'year' in paper.keys()]
+
     # Sort papers by year
-    papers_chron_order_rev = sorted(paper_dataset, key=lambda x: x['year'],
+    papers_chron_order_rev = sorted(dataset, key=lambda x: x['year'],
                                 reverse=True)
+
     # Get most recent affiliations
     author_affils = {}
+    all_authors = []
     for paper in papers_chron_order_rev:
+        addrs = {addr['addr_no']: addr for addr in paper['addresses']}
         for author in paper['authors']:
-            if author['wos_standard'] in author_affils.keys():
+            try:
+                all_authors.append(author['wos_standard'])
+                if author['wos_standard'] in author_affils.keys():
+                    continue
+                else:
+                    try:
+                        country = addrs[author['addr_no']]['country']
+                        country_iso = get_iso_alpha(country)
+                        if country_iso is not None:
+                            author_affils[author['wos_standard'].lower()] = country_iso
+                    except KeyError:
+                        continue
+            except KeyError:
                 continue
-            else:
-                pass
+
+    print(f'There are {len(author_affils)} author-country pairs, and {len(set(all_authors))} total authors.')
+
+    return author_affils
+                
+
+def calculate_gen_prob_geo_score(author_affils_dict, top_50p, bottom_50p):
+    """
+    Calculates the general probability score for an author with no geographic
+    affiliation.
+
+    parameters:
+        author_affils_dict, dict: keys are all authors in dataset, values are
+            country affiliation iso alpha three-letter codes
+        top_50p, list of str: list of top 50 percentile attendee countries
+        bottom_50p, list of str: list of bottom 50 percentile attendee countries
+
+    returns:
+        gen_prob_score, float: single number general probability score
+    """
+    # Get overall counts and convert to weights
+    country_counts = pd.DataFrame.from_dict(Counter(author_affils_dict.values()), orient='index', columns=['count'])
+    country_counts['weight'] = country_counts['count']/country_counts['count'].sum()
+
+    # Get overall probability of belonging to an attendee country
+    all_attendee_countries = top_50p + bottom_50p
+    attendee_countries_total_weight = country_counts[country_counts.index.isin(all_attendee_countries)]['weight'].sum()
+
+    # Get the probability of an attendee country being a low representation country
+    low_rep_prob = len(bottom_50p)/len(all_attendee_countries)
+    
+    # Make the calculation
+    gen_prob_score = (1 - attendee_countries_total_weight) + (attendee_countries_total_weight*(low_rep_prob*0.5))
+    
+    return gen_prob_score

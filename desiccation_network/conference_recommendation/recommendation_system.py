@@ -7,12 +7,14 @@ import utils
 import pandas as pd
 import networkx as nx
 from infomap import Infomap
-from collections import defaultdict
+from collections import defaultdict, Counter
 from itertools import combinations
 import numpy as np
 from networkx.algorithms.community.louvain import louvain_communities, louvain_partitions
 from statistics import mean
 from generic_tree_node import GenericTreeNode
+import jsonlines
+import pycountry
 
 
 class RecommendationSystem():
@@ -59,6 +61,7 @@ class RecommendationSystem():
         """
         # Initialize attributes passed to init
         self.paper_dataset = paper_dataset
+        self.set_author_country_affils_dict()
         self.classed_citation_net = classed_citation_net
         self.topic_model = topic_model
         self.vec_model = vec_model
@@ -68,6 +71,7 @@ class RecommendationSystem():
         alt_names = utils.process_alt_names(alt_names)
         self.conference_authors, alt_names = utils.find_author_papers(
             attendees, paper_dataset, alt_names)
+        self.set_attendee_country_affils_list(attendees)
         self.all_possible_conf_names = list(alt_names.keys())
         self.all_possible_conf_names.extend([name for name
                         in self.conference_authors.keys() if name not in
@@ -98,6 +102,21 @@ class RecommendationSystem():
         self.cite_partitions = None
         self.enriched_clusters = None
 
+    def set_author_country_affils_dict(self):
+        """
+        Set countries for all authors.
+        """
+        self.author_affils_dict = utils.get_geographic_locations(self.paper_dataset)
+
+    def set_attendee_country_affils_list(self, attendees):
+        """
+        Set countries reported in registration by past attendees.
+        """
+        country_conversions = {country.name: country.alpha_3 for country in pycountry.countries}
+        attendee_countries = attendees['Country']
+        attendee_countries = attendee_countries.replace({'The Netherlands': 'Netherlands', 'USA': 'United States'}) # Assumes these are the only problem children
+        self.attendee_affils_list = [country_conversions[count] for count in attendee_countries]
+    
     def set_author_papers(self):
         """
         Set author_papers attribute
@@ -458,6 +477,40 @@ class RecommendationSystem():
         except KeyError:
             return 0
 
+    def calculate_geography_score(self, author):
+        """
+        Calcualte gepgraphy score for one author.
+
+        parameters:
+            author, str: author
+
+        returns:
+            geography_score, float: score between 0 and 1
+        """
+        # Split the conference affiliations by percentile
+        country_counts = Counter(self.attendee_affils_list)
+        split_50p = np.percentile(list(country_counts.values()), 50)
+        top_50p = [country for country, count in country_counts.items() if count >= split_50p]
+        bottom_50p = [country for country, count in country_counts.items() if count < split_50p]
+        gen_prob_score = utils.calculate_gen_prob_geo_score(self.author_affils_dict, top_50p, bottom_50p)
+
+        # Get author country
+        try:
+            affil = self.author_affils_dict[author]
+    
+            # Calculate score
+            if affil in top_50p:
+                geography_score = 0
+            elif affil in bottom_50p:
+                geography_score = 0.5
+            else:
+                geography_score = 1
+
+        except KeyError:
+            geography_score = gen_prob_score
+
+        return geography_score
+
     def calculate_candidate_scores(self):
         """
         Get scores for all potential candidates.
@@ -465,7 +518,6 @@ class RecommendationSystem():
         returns:
             all_scores, dict: keys are author names, values are composite scores
         """
-        ## TODO save out granular features here
         print('\nCalculating candidate scores...')
 
         # Get IDs of clusters with nonzero enrichments
@@ -476,6 +528,7 @@ class RecommendationSystem():
                     enriched[cluster_type].append(cluster)
 
         all_scores = {}
+        author_score_list = []
         for author in self.author_papers.keys():
             if author not in self.conference_authors.keys():
                 author_scores = {}
@@ -485,15 +538,20 @@ class RecommendationSystem():
                         'co_citation': self.co_cite_cluster_distances,
                         'co_author': self.co_author_cluster_distances
                 }.items():
-                    author_scores[clust_type] = self.calculate_mean_hier_score(author, cluster_distances, self.enriched_clusters[clust_type])
+                    enriched_ids = [clust_id for clust_id, enrich in self.enriched_clusters[clust_type].items() if enrich > 0]
+                    author_scores[clust_type] = self.calculate_mean_hier_score(author, cluster_distances, enriched_ids)
 
                 # Topic cluster scores
-                mean_topic_score = self.calculate_topic_pa_score(author, self.topics_to_authors, self.enriched_clusters['topic'])
+                enriched_tops = [clust_id for clust_id, enrich in self.enriched_clusters['topic'].items() if enrich > 0]
+                mean_topic_score = self.calculate_topic_pa_score(author, self.topics_to_authors, enriched_tops)
                 if ('co_citation' in author_scores.keys()) and ('co_author' in author_scores.keys()):
                     author_scores['topic'] = mean_topic_score
 
                 # Geography score
-                ## TODO implement
+                author_scores['geography'] = self.calculate_geography_score(author)
+                
+                # Record individual scores
+                author_score_list.append(author_scores)
 
                 # Combine into composite score
                 if len(author_scores) > 0:
@@ -505,6 +563,12 @@ class RecommendationSystem():
                 
                 # Add to all scores
                 all_scores[author] = author_overall_score
+
+        # Save all individual scores
+        scorepath = f'{self.outpath}/{self.outprefix}_individual_component_scores.jsonl'
+        with jsonlines.open(scorepath, 'w') as writer:
+            writer.write_all(author_score_list)
+        print(f'Saved all individual scores as {scorepath}')
 
         return all_scores
 
@@ -542,10 +606,16 @@ class RecommendationSystem():
         # Apply threshold
         sorted_scores = {
             k: v
-            for k, v in sorted(all_scores.items(), key=lambda item: item[1])
+            for k, v in sorted(all_scores.items(), key=lambda item: item[1], reverse=True)
         }
         num_to_return = round(cutoff * len(sorted_scores))
         candidates = list(sorted_scores.keys())[:num_to_return]
+        
+        # Save all composite scores
+        score_df = pd.DataFrame.from_dict(sorted_scores, orient='index', columns=['composite_score'])
+        score_path = f'{self.outpath}/{self.outprefix}_composite_scores.csv'
+        score_df.to_csv(score_path, index=True)
+        print(f'Saved overall composite scores as {score_path}')
 
         # Update the co-networks with candidates
         new_co_cite_attrs = {}
