@@ -49,11 +49,10 @@ class RecommendationSystem():
             attendees, df: columns are Surname, First_name, Affiliation, Country
             alt_names, df: columns are columns are Registration_surname,
                 Registration_first_name, Alternative_name_1..., Maiden_name
-            enrich_threshold, float: proportion of authors in a cluster that
-                should be conference attendees to consider a cluster "enriched"
-                in conference attendees. For smaller conferences, this should be
-                left as None, as few clusters will contain authors and they will
-                only be present in smaller numbers
+            enrich_threshold, int: Percentile cutoff between 0 and 100. Uses the
+                distribution of enrichment values to edtermine a threshold for
+                the proportion of authors in a cluster that should be conference
+                attendees to consider a cluster "enriched" in conference attendees.
             prod_threshold, float: number between 0 and 1, the percent of authors
                 to consider as candidates based on number of publications
             outpath, str: path to save outputs
@@ -379,7 +378,6 @@ class RecommendationSystem():
         print('\nCalculating community enrichments for all cluster types...')
         enrichments = {}
         for clust_type, clusters_to_authors in {
-                ##TODO 'directed_citation': self.cite_ids_to_authors,
                 'co_citation': self.co_cite_clusters_to_authors,
                 'co_author': self.co_author_clusters_to_authors,
                 'topic': self.topics_to_authors
@@ -400,7 +398,15 @@ class RecommendationSystem():
                 total_num = len(authors)
                 enrich_prop = len(num_conf) / total_num
                 clust_enrich[clust] = enrich_prop
+            # Use threshold if requested
+            if self.enrich_threshold is not None:
+                cutoff = np.percentile(list(enrichments), self.enrich_threshold)
+                clust_enrich = {clust: (0.0 if enrich < cutoff else enrich) for clust, enrich in clust_enrich.items()}
+            
             enrichments[clust_type] = clust_enrich
+        
+        
+        
         self.enriched_clusters = enrichments
 
     @staticmethod

@@ -115,13 +115,12 @@ if __name__ == "__main__":
                         help='Proportion of top candidates to return.')
     parser.add_argument(
         '-enrich_threshold',
-        type=float,
+        type=int,
         default=None,
-        help='Number between 0 and 1, proportion of authors in a cluster '
-        'that should be conference attendees to consider a cluster '
-        '"enriched" in conference attendees. For smaller conferences, this '
-        'should be left as None, as few clusters will contain authors and '
-        'they will only be present in smaller numbers')
+        help='Percentile cutoff between 0 and 100. Uses the distribution of '
+        'enrichment values to edtermine a threshold for the proportion of '
+        'authors in a cluster that should be conference attendees to consider '
+        'a cluster "enriched" in conference attendees.')
     parser.add_argument(
         '-prod_threshold',
         type=float,
