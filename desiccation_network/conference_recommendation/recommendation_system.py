@@ -400,7 +400,7 @@ class RecommendationSystem():
                 clust_enrich[clust] = enrich_prop
             # Use threshold if requested
             if self.enrich_threshold is not None:
-                cutoff = np.percentile(list(enrichments), self.enrich_threshold)
+                cutoff = np.percentile(list(clust_enrich.values()), self.enrich_threshold)
                 clust_enrich = {clust: (0.0 if enrich < cutoff else enrich) for clust, enrich in clust_enrich.items()}
             
             enrichments[clust_type] = clust_enrich
@@ -578,14 +578,15 @@ class RecommendationSystem():
 
         return all_scores
 
-    def get_conference_candidates(self, cutoff=0.1):
+    def get_conference_candidates(self, cutoff=5):
         """
         Get candidates for conference invitation.
 
         parameters:
-            cutoff, float: number between 0 and 1, proportion of candidates to
-                return. For example, 0.1 returns the authors with the 10%
-                highest scores.
+            cutoff, int: number of candidates to return, uses highest scores.
+
+        returns:
+            candidates, list of str: candidates
         """
         print('\nBeginning calculations for conference candidates')
         print(
@@ -614,8 +615,7 @@ class RecommendationSystem():
             k: v
             for k, v in sorted(all_scores.items(), key=lambda item: item[1], reverse=True)
         }
-        num_to_return = round(cutoff * len(sorted_scores))
-        candidates = list(sorted_scores.keys())[:num_to_return]
+        candidates = list(sorted_scores.keys())[:cutoff]
         
         # Save all composite scores
         score_df = pd.DataFrame.from_dict(sorted_scores, orient='index', columns=['composite_score'])
@@ -635,9 +635,6 @@ class RecommendationSystem():
         print(
             f'Saved co-citation network as {self.outpath}/{self.outprefix}_co_citation_network.graphml'
         )
-        print(
-            f'{len(candidates)} conference candidates were identified, out of '
-            f'a total initial list of {len(sorted_scores)}.')
 
         new_co_auth_attrs = {}
         for node, attrs in self.co_author_net.nodes(data=True):

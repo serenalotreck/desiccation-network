@@ -110,9 +110,9 @@ if __name__ == "__main__":
         'are Registration_surname, Registration_first_name, '
         'Alternative_name_1..., Maiden_name')
     parser.add_argument('-cutoff',
-                        type=float,
-                        default=0.1,
-                        help='Proportion of top candidates to return.')
+                        type=int,
+                        default=5,
+                        help='Number of top candidates to return.')
     parser.add_argument(
         '-enrich_threshold',
         type=int,
