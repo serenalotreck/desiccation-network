@@ -395,14 +395,14 @@ def get_species_names(title, abstract, taxonerd):
     return species
 
 
-def get_unique_papers(search_results, keyname, main_results_only):
+def get_unique_papers(search_results, keyname, return_jsonl):
     """
     Get unique papers to classify.
 
     parameters:
         search_results, list of dict: search results to parse
         keyname, str: whether to use UID or paperID to get papers
-        main_results_only, bool: whether or not to exclude references
+        return_jsonl, bool: only get main results to add back to jsonl
 
     returns:
         to_classify, dict: keys are paperIds, values are dict with title and
@@ -416,7 +416,7 @@ def get_unique_papers(search_results, keyname, main_results_only):
                 'title': paper['title'],
                 'abstract': paper['abstract']
             }
-        if not main_results_only:
+        if not return_jsonl:
             for ref in paper['references']:
                 if (ref[keyname] not in to_classify.keys()) and (ref[keyname]
                                                                    is not None):
@@ -465,7 +465,7 @@ def generate_links_without_classification(search_results, keyname):
 
 def generate_classified_dict(search_results, taxonerd, nlp, linker,
                                        intermediate_save_path, use_intermed,
-                                       generic_dict, keyname, main_results_only):
+                                       generic_dict, keyname, return_jsonl):
     """
     Generate a list of edges by paper ID from the results of a Semantic Scholar query. Removes malformed
     citations with no paperID, and classifies nodes by the organisms in their titles.
@@ -482,13 +482,13 @@ def generate_classified_dict(search_results, taxonerd, nlp, linker,
         generic_dict, dict: keys are generic terms for kingdoms, values are
             kingdoms
         keyname, str: whether to use 'paperId' or 'UID' to access paper IDs
-        main_results_only, bool: whether or not to exclude references
+        return_jsonl, bool: only get main results to add back to jsonl
 
     returns:
         classified, dict: keys are UID/paperIds, values are classifications
     """
     # Make dict of unique papers for classification
-    to_classify = get_unique_papers(search_results, keyname, main_results_only)
+    to_classify = get_unique_papers(search_results, keyname, return_jsonl)
 
     # Start timer
     start = time.time()
@@ -555,7 +555,7 @@ def clean_input_data(search_results, keyname):
     """
     Get rid of documents that don't have UIDs or abstracts. If a main
     result paper doens't have an abstract, it and all of its references will be
-    removed from the dataset.
+    removed from the dataset. Papers with no references will also be removed.
 
     parameters:
         search_results, list of dict: papers
@@ -570,6 +570,7 @@ def clean_input_data(search_results, keyname):
     refs_dropped = []
     mains_no_uid = 0
     refs_no_uid = 0
+    zero_refs = 0
     for res in search_results:
         # Check for a UID
         try:
@@ -611,21 +612,25 @@ def clean_input_data(search_results, keyname):
                 else:
                     updated_refs.append(ref)
             res['references'] = updated_refs
-        clean_search_results.append(res)
+        if len(res['references']) > 0:
+            clean_search_results.append(res)
+        else:
+            zero_refs += 1
 
     print(f'While processing documents, {mains_no_uid} main documents were '
     f'dropped because they did not have a UID, and {refs_no_uid} references '
     f'were lost for the same reason.\n{len(set(mains_dropped))} main results '
     f'of the original {original_len} documents were dropped because they '
     f'did not have abstracts, and {len(set(refs_dropped))} references were '
-    'dropped for not having an abstract.')
+    f'dropped for not having an abstract. A final {zero_refs} documents were '
+    'dropped because after cleaning they had 0 references.')
 
     return clean_search_results
 
 
 def main(search_result_path, output_save_path, intermediate_save_path,
         use_intermed, generic_dict, prefer_gpu, skip_classification,
-        main_results_only):
+        return_jsonl):
 
     # Read in search results and clean
     print('\nLoading citation data...')
@@ -660,9 +665,9 @@ def main(search_result_path, output_save_path, intermediate_save_path,
         print('\nClassifying papers...')
         classified = generate_classified_dict(
             search_results, taxonerd, nlp, linker, intermediate_save_path,
-            use_intermed, generic_dict, keyname, main_results_only)
+            use_intermed, generic_dict, keyname, return_jsonl)
         # Map the classifications back to requested data structure and save
-        if not main_results_only:
+        if not return_jsonl:
             print('\nBuilding graph...')
             citenet = build_graph(search_results, classified, keyname)
             # Save graph
@@ -678,7 +683,7 @@ def main(search_result_path, output_save_path, intermediate_save_path,
                 writer.write_all(search_results)
             print(f'Results saved to {output_save_path}')
     else:
-        if not main_results_only:
+        if not return_jsonl:
             print('\nFormatting citation network without classification...')
             nodes, edges = generate_links_without_classification(search_results,
                     keyname)
@@ -690,8 +695,8 @@ def main(search_result_path, output_save_path, intermediate_save_path,
             nx.write_graphml(citenet, output_save_path)
             print(f'Graph saved to {output_save_path}')
         else:
-            assert not main_results_only, ('Cannot return a citation network '
-                    'if main_results_only is specified, please try again.')
+            assert not return_jsonl, ('Cannot return a citation network '
+                    'if return_jsonl is specified, please try again.')
 
     print('\nDone!')
 
@@ -707,7 +712,7 @@ if __name__ == '__main__':
     parser.add_argument('output_save_path',
                         type=str,
                         help='Path to save graph, extension is .graphml if '
-                        'a graph is requested, .jsonl if --main_results_only '
+                        'a graph is requested, .jsonl if --return_jsonl '
                         'is specified.')
     parser.add_argument('-intermediate_save_path', type=str, default='',
                         help='Path to directory to save intermediate results, '
@@ -727,7 +732,7 @@ if __name__ == '__main__':
     parser.add_argument('--skip_classification',
                         action='store_true',
                         help='Build the graph without node classification')
-    parser.add_argument('--main_results_only', action='store_true',
+    parser.add_argument('--return_jsonl', action='store_true',
                         help='Ignore references and return result as a jsonl')
 
     args = parser.parse_args()
@@ -740,15 +745,15 @@ if __name__ == '__main__':
         args.generic_dict = abspath(args.generic_dict)
         with open(args.generic_dict) as myf:
             generic_dict = json.load(myf)
-    if args.main_results_only:
+    if args.return_jsonl:
         assert splitext(args.output_save_path)[1] == '.jsonl', (
                 'Extension for output_save_path must be .jsonl if '
-                '--main_results_only is specified, please try again.')
+                '--return_jsonl is specified, please try again.')
     else:
         assert splitext(args.output_save_path)[1] == '.graphml', (
                 'Extension for output_save_path must be .graphml if '
-                '--main_results_only is not specified, please try again.')
+                '--return_jsonl is not specified, please try again.')
 
     main(args.search_result_path, args.output_save_path,
             args.intermediate_save_path, args.use_intermed, generic_dict,
-         args.prefer_gpu, args.skip_classification, args.main_results_only)
+         args.prefer_gpu, args.skip_classification, args.return_jsonl)
