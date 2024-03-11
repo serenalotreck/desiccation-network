@@ -570,7 +570,6 @@ def clean_input_data(search_results, keyname):
     refs_dropped = []
     mains_no_uid = 0
     refs_no_uid = 0
-    zero_refs = 0
     for res in search_results:
         # Check for a UID
         try:
@@ -612,19 +611,25 @@ def clean_input_data(search_results, keyname):
                 else:
                     updated_refs.append(ref)
             res['references'] = updated_refs
-        if len(res['references']) > 0:
             clean_search_results.append(res)
-        else:
-            zero_refs += 1
+    # Now, need to drop isolate nodes
+    to_drop = []
+    is_cited = [ref['UID'] for paper in clean_search_results for ref in paper['references']]
+    for paper in clean_search_results:
+        if (paper['UID'] not in is_cited) and (len(paper['references']) == 0):
+            to_drop.append(paper)
+    clean_search_results = [paper for paper in clean_search_results if paper not in to_drop]
 
     print(f'While processing documents, {mains_no_uid} main documents were '
     f'dropped because they did not have a UID, and {refs_no_uid} references '
     f'were lost for the same reason.\n{len(set(mains_dropped))} main results '
     f'of the original {original_len} documents were dropped because they '
     f'did not have abstracts, and {len(set(refs_dropped))} references were '
-    f'dropped for not having an abstract. A final {zero_refs} documents were '
-    'dropped because after cleaning they had 0 references.')
+    f'dropped for not having an abstract. A final {len(to_drop)} documents were '
+    'dropped because after cleaning they had 0 references or citations.')
 
+    print(f'There were {len(search_results)} main results in the original '
+    f'dataset, after cleaning there are {len(clean_search_results)}.')
     return clean_search_results
 
 
