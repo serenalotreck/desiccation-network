@@ -514,6 +514,7 @@ class RecommendationSystem():
 
         except KeyError:
             geography_score = gen_prob_score
+            print('Used general probability score for an author.')
 
         return geography_score
 

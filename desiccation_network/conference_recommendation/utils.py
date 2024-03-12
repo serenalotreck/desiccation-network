@@ -440,6 +440,10 @@ def get_geographic_locations(dataset):
     """
     Get the country name of the most recent affiliation for all authors.
 
+    NOTE: For papers where authors don't have address numbers, checks if the
+    addresses are all located in the same country and assigns that country as
+    the affiliation location.
+
     parameters:
         dataset, list of dict: paper dataset with authors and affiliations
     """
@@ -462,12 +466,21 @@ def get_geographic_locations(dataset):
                     continue
                 else:
                     try:
+                        # Check for specific affiliation
                         country = addrs[author['addr_no']]['country']
                         country_iso = get_iso_alpha(country)
                         if country_iso is not None:
                             author_affils[author['wos_standard'].lower()] = country_iso
                     except KeyError:
-                        continue
+                        # Check if all affiliations are in the same country if no specific affiliation
+                        countries = [addr['country'] for addr in paper['addresses']]
+                        if len(set(countries)) == 1:
+                            country = countries[0]
+                            country_iso = get_iso_alpha(country)
+                            if country_iso is not None:
+                                author_affils[author['wos_standard'].lower()] = country_iso
+                        else:
+                            continue
             except KeyError:
                 continue
 
