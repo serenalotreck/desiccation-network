@@ -180,12 +180,12 @@ def paper_dataset():
 @pytest.fixture
 def alt_names():
     names_df = {
-        'Registration_surname': ['One Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine IsNine', 'Ten', 'Eleven', 'Twelve', 'Thirteen'],
-        'Registration_first_name': ['Person12', 'Person3', 'Person4', 'Person5', 'Person6 M.', 'Person7', 'Person8', 'Person9 isperson9', 'Person', 'Person10', 'Person11 isPerson11', 'Person12', 'Person13'],
-        'Alternative_name_1': ['Person12 A. T. C. One', np.nan, 'Person4 M.I. Four', np.nan, 'Person6 Middle Six', 'P.M. Seven', 'Person8', 'Person9-isperson9 N. IsNine', 'Person10 isPerson10 Tén', 'P. isPerson11', 'Twelve Person12', 'isPerson13 Person13 Thirteen'],
-        'Alternative_name_2': [np.nan, np.nan, 'Person4 M. Four', np.nan, np.nan, 'Person7 M.I. Seven', np.nan, np.nan, np.nan, 'Person11 isPérson11 Eleven', np.nan, 'i.P. Thirteen'],
-        'Alternative_name_3': [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan],
-        'Maiden_name':[np.nan, np.nan, np.nan, 'Alive', np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+        'Registration_surname': ['One Two', 'Three', 'Four', 'Five', 'Six', 'Seven'],
+        'Registration_first_name': ['Person12', 'Person3', 'Person4', 'Person5', 'Person6 M.', 'Person7'],
+        'Alternative_name_1': ['Person12 A. T. C. One', np.nan, 'Person4 M.I. Four', np.nan, 'Person6 Middle Six', 'P.M. Seven'],
+        'Alternative_name_2': [np.nan, np.nan, 'Person4 M. Four', np.nan, np.nan, 'Person7 M.I. Seven'],
+        'Alternative_name_3': [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan],
+        'Maiden_name':[np.nan, np.nan, np.nan, 'Alive', np.nan, np.nan]
     }
     return pd.DataFrame(names_df)
 
