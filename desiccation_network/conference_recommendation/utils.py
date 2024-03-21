@@ -8,6 +8,7 @@ import numpy as np
 from collections import defaultdict, Counter
 import pycountry
 import pandas as pd
+from unidecode import unidecode
 
 
 def calculate_dyadic_citation_freqs(graph):
@@ -234,7 +235,13 @@ def filter_papers(papers, key_df, kind, stringency='most'):
 
 def process_alt_names(alt_names):
     """
-    Turn an alternative name dataframe into a dict indexed by WOS standard names self-reported by attendees.
+    Turn an alternative name dataframe into a dict indexed by WOS standard names
+    self-reported by attendees. Note that this function was created to allow
+    generalization without too much manual labor (i.e., names can be pasted
+    into alt names spreadhseet as they appear in publications, and don't need
+    to be manually formatted to fit WOS standard formatting); however, it was
+    designed on a specific set of names with specific properties, and may need
+    additional test cases/tuning for new name cases.
 
     parameters:
         alt_names, df: columns are columns are Registration_surname, Registration_first_name,
@@ -256,9 +263,37 @@ def process_alt_names(alt_names):
             if not isinstance(name, str):
                 continue
             split_name = name.split(' ')
+            # Check alternative name for hyphenated instances
+            hyphenated_parts = [True if len(name.split('-')) > 1 else False for name in split_name]
+            if any(hyphenated_parts):
+                hyphenated_replacements = {
+                    i: split_name[i].split('-')
+                    for i, is_hyp in enumerate(hyphenated_parts)
+                    if is_hyp
+                }
+            # If the name is a simple firstname/lastname swap, skip other steps
+            if split_name == [row.Registration_surname, row.Registration_first_name]:
+                names.append((split_name[1].lower(), split_name[0].lower()))
+                continue
+            # If the publication name is just a first name, skip other steps
+            if len(split_name) == 1:
+                names.append((split_name[0].lower(),))
+                continue
             # Remove surname to get first name
             surname = row.Registration_surname.split(' ')
-            first_name = [i for i in split_name if i not in surname]
+            # Check reported surname for hyphenated instances
+            rep_sur_hyp_parts = [True if len(name.split('-')) > 1 else False for name in surname]
+            if any(rep_sur_hyp_parts):
+                pass
+            ## TODO pick up here
+            surname = [part for name in surname for part in name.split('-')]
+            surname_hyphenated = [True if len(name.split('-')) > 1 else False for name in surname]
+            first_name = [i for i in split_name if unidecode(i) not in [unidecode(p) for p in surname]]
+            first_name_hyphenated = [True if len(name.split('-')) > 1 else False for name in first_name]
+            # If nothing was removed, check for the second first name having become surname
+            if len(first_name) == len(split_name):
+                # Assumes the final name in list is the surname
+                first_name = first_name[:-1]
             # Adjust surname if one part is missing in alt name (edge case that exists in our data)
             alt_surname = [i for i in split_name if i not in first_name]
             first_name = [' '.join([i.strip() for i in nm.split('.')]).strip() for nm in first_name]

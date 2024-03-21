@@ -207,7 +207,7 @@ def alt_name_input():
     # Registration name is initialized but other names are not
     # Initialized first and middle in publications
     # Single name on publication (aka no surname)
-    # Different hyphenation of surname plus exclusion of middle name
+    # Different hyphenation of first name plus exclusion of middle name
     # Additional middle/surname plus accented letter differences
     # Dropped last surname
     # Swapped first and last name
@@ -216,7 +216,7 @@ def alt_name_input():
         'Registration_surname': ['One Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine IsNine', 'Ten', 'Eleven', 'Twelve', 'Thirteen'],
         'Registration_first_name': ['Person12', 'Person3', 'Person4', 'Person5', 'Person6 M.', 'Person7', 'Person8', 'Person9 isperson9',  'Person10', 'Person11 isPerson11', 'Person12', 'Person13'],
         'Alternative_name_1': ['Person12 A. T. C. One', np.nan, 'Person4 M.I. Four', np.nan, 'Person6 Middle Six', 'P.M. Seven', 'Person8', 'Person9-isperson9 N. IsNine', 'Person10 isPerson10 Tén', 'P. isPerson11', 'Twelve Person12', 'isPerson13 Person13 Thirteen'],
-        'Alternative_name_2': [np.nan, np.nan, 'Person4 M. Four', np.nan, np.nan, 'Person7 M.I. Seven', np.nan, np.nan, np.nan, 'Person11 isPérson11 Eleven', np.nan, 'i.P. Thirteen'],
+        'Alternative_name_2': [np.nan, np.nan, 'Person4 M. Four', np.nan, np.nan, 'Person7 M.I. Seven', np.nan, 'Person 9 isperson9 Nine-IsNine', np.nan, 'Person11 isPérson11 Eleven', np.nan, 'i.P. Thirteen'],
         'Alternative_name_3': [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan],
         'Maiden_name':[np.nan, np.nan, np.nan, 'Alive', np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
     }
@@ -231,18 +231,19 @@ def alt_name_output():
         'five, p': [('five', 'person5'), ('alive', 'person5')],
         'six, pm': [('six', 'person6 m'), ('six', 'person6 middle')],
         'seven, p': [('seven', 'person7'), ('seven', 'p m'), ('seven', 'person7 m i')],
-        'eight, p': [('person8')],
-        'nine isnine, pi': [('isnine,  person9-isperson9 n')],
-        'ten, p': [('tén, person10 isperson10')],
-        'eleven, pi': [('isperson11, p'), ('eleven, person11 ispérson11')],
-        'twelve, p': [('person12, twelve')],
-        'thirteen, p': [('thirteen, isperson13 person13'), ('thirteen, ip')]
+        'eight, p': [('eight', 'person8'), ('person8',)],
+        'nine isnine, pi': [('nine is nine', 'person9 isperson9'), ('isnine',  'person9-isperson9 n'), ('nine-isnine', 'person9 isperson9')],
+        'ten, p': [('ten', 'person10'), ('tén', 'person10 isperson10')],
+        'eleven, pi': [('eleven', 'person11 isperson11'), ('isperson11', 'p'), ('eleven', 'person11 ispérson11')],
+        'twelve, p': [('twelve', 'person12'), ('person12', 'twelve')],
+        'thirteen, p': [('thirteen', 'person13'), ('thirteen', 'isperson13 person13'), ('thirteen', 'i p')]
     }
 
 
 def test_process_alt_names(alt_name_input, alt_name_output):
     
     result = utils.process_alt_names(alt_name_input)
+    
     
     assert result == alt_name_output
 
