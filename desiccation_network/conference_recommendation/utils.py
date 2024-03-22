@@ -444,7 +444,7 @@ def get_iso_alpha(country):
              'Dominican Rep': 'DOM',
              'Cote Ivoire': 'CIV',
              'Brunei': 'BRN',
-             'DEM REP CONGO': 'COD',
+             'Dem Rep Congo': 'COD',
              'Syria': 'SYR',
              'Kosovo': 'XKX', # Note: Kosovo is not listed as an ISO standard country. The unofficial 2 and 3-digit codes are used by the European Commission and others until Kosovo is assigned an ISO code.(from https://knowledgecenter.zuora.com/Quick_References/Country%2C_State%2C_and_Province_Codes/A_Country_Names_and_Their_ISO_Codes)
              'BELARUS': 'BLR',
@@ -453,15 +453,18 @@ def get_iso_alpha(country):
              'North Korea': 'PRK',
              'Palestine': 'PSE',
              'Laos': 'LAO',
-             'Papua N Guinea': 'PNG'}
+             'Papua N Guinea': 'PNG',
+             'Usa': 'USA',
+             'Fed Rep Ger': 'DEU' # For older affiliations from West Germany
+    }
 
     # Map country and return
     try:
-        iso_name = country_conversions[country]
+        iso_name = country_conversions[country.title()]
         return iso_name
     except KeyError:
         try:
-            iso_name = wos_missed_dict[country]
+            iso_name = wos_missed_dict[country.title()]
             return iso_name
         except KeyError:
             print(f'No three-letter code found for country {country}, returning None')
