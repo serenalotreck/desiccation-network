@@ -254,7 +254,9 @@ def process_alt_names(alt_names):
     alt_names_dict = {}
     for row in alt_names.iterrows():
         row = row[1]
-        key = f'{row.Registration_surname.lower()}, {"".join([n[0] for n in row.Registration_first_name.split()]).lower()}'
+        # Account for possible first name hyphenation when getting the key name
+        reg_first_name = [i for part in row.Registration_first_name.split() for i in part.split('-')]
+        key = f'{row.Registration_surname.lower()}, {"".join([n[0] for n in reg_first_name]).lower()}'
         names = []
         # Add registration name
         names.append((row.Registration_surname.lower(), row.Registration_first_name.lower().strip('.')))
@@ -263,14 +265,6 @@ def process_alt_names(alt_names):
             if not isinstance(name, str):
                 continue
             split_name = name.split(' ')
-            # Check alternative name for hyphenated instances
-            hyphenated_parts = [True if len(name.split('-')) > 1 else False for name in split_name]
-            if any(hyphenated_parts):
-                hyphenated_replacements = {
-                    i: split_name[i].split('-')
-                    for i, is_hyp in enumerate(hyphenated_parts)
-                    if is_hyp
-                }
             # If the name is a simple firstname/lastname swap, skip other steps
             if split_name == [row.Registration_surname, row.Registration_first_name]:
                 names.append((split_name[1].lower(), split_name[0].lower()))
@@ -281,15 +275,8 @@ def process_alt_names(alt_names):
                 continue
             # Remove surname to get first name
             surname = row.Registration_surname.split(' ')
-            # Check reported surname for hyphenated instances
-            rep_sur_hyp_parts = [True if len(name.split('-')) > 1 else False for name in surname]
-            if any(rep_sur_hyp_parts):
-                pass
-            ## TODO pick up here
             surname = [part for name in surname for part in name.split('-')]
-            surname_hyphenated = [True if len(name.split('-')) > 1 else False for name in surname]
             first_name = [i for i in split_name if unidecode(i) not in [unidecode(p) for p in surname]]
-            first_name_hyphenated = [True if len(name.split('-')) > 1 else False for name in first_name]
             # If nothing was removed, check for the second first name having become surname
             if len(first_name) == len(split_name):
                 # Assumes the final name in list is the surname
@@ -329,7 +316,7 @@ def find_author_papers(attendees, dataset, alt_names):
     # for col in attendees.columns:
     #         attendees[col] = attendees[col].str.strip().str.lower()
     
-    ## TODO implement the ability to use the attenedes df instead of alt names,
+    ## TODO implement the ability to use the attendees df instead of alt names,
     ## for cases where alt names can't be curated manually
     
     # Make dictionary where keys are all possible names in all possible WOS
@@ -340,8 +327,12 @@ def find_author_papers(attendees, dataset, alt_names):
         # 2006 to present
         auth_full_names = []
         for alt_n in alts:
+            # For authors with only a single  name
+            if len(alt_n) == 1:
+                auth_full_names.append(alt_n[0])
+                continue
             last_name = alt_n[0]
-            # This assumes that if splitting on spaces and stripping periods
+            # This assumes that if splitting on spaces/hyphens and stripping periods
             # lands you with only one letter, it's an initial, and otherwise
             # it's a full first name
             first_name_parts = [n.strip('.') for n in alt_n[1].split()]
@@ -361,26 +352,32 @@ def find_author_papers(attendees, dataset, alt_names):
         # pre-2006/WOS standard
         auth_initial_names = []
         for alt_n in alts:
+            # Skip single names
+            if len(alt_n) == 1:
+                continue
             last_name = alt_n[0]
-            initials = ''.join([n[0] for n in alt_n[1].split()])
+            initials = ''.join([n[0] for name in alt_n[1].split() for n in name.split('-')])
             initial_name = last_name + ', ' + initials
             auth_initial_names.append(initial_name)
         # 1964-75
         auth_11_char_names = []
-        for tup_n in alts:
+        for alt_n in alts:
+            # Skip single names
+            if len(alt_n) == 1:
+                continue
             # If surname is longer than 8 chars, it is truncated and the first
             # and last name are separated with a dot
-            if len(tup_n[0]) > 8:
-                last_name = tup_n[0][:8]
-                initials = ''.join([n[0] for n in tup_n[1].split()][:3])
+            if len(alt_n[0]) > 8:
+                last_name = alt_n[0][:8]
+                initials = ''.join([n[0] for name in alt_n[1].split() for n in name.split('-')][:3])
                 dot_name = last_name + '.' + initials
                 auth_11_char_names.append(dot_name)
             # If it's less than 8 characters, we can include more first initials
             # and it's separated with a space
             else:
-                remaining_chars = 11 - len(tup_n[0])
-                last_name = tup_n[0]
-                initials = ''.join([n[0] for n in tup_n[1].split()][:remaining_chars])
+                remaining_chars = 11 - len(alt_n[0])
+                last_name = alt_n[0]
+                initials = ''.join([n[0] for name in alt_n[1].split() for n in name.split('-')][:remaining_chars])
                 space_name = ' '.join([last_name, initials])
                 auth_11_char_names.append(space_name)
         # Combine and add to dict

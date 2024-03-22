@@ -212,13 +212,14 @@ def alt_name_input():
     # Dropped last surname
     # Swapped first and last name
     # Additional first name
+    # Hyphenated first name in reported name
     names_df = {
-        'Registration_surname': ['One Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine IsNine', 'Ten', 'Eleven', 'Twelve', 'Thirteen'],
-        'Registration_first_name': ['Person12', 'Person3', 'Person4', 'Person5', 'Person6 M.', 'Person7', 'Person8', 'Person9 isperson9',  'Person10', 'Person11 isPerson11', 'Person12', 'Person13'],
-        'Alternative_name_1': ['Person12 A. T. C. One', np.nan, 'Person4 M.I. Four', np.nan, 'Person6 Middle Six', 'P.M. Seven', 'Person8', 'Person9-isperson9 N. IsNine', 'Person10 isPerson10 Tén', 'P. isPerson11', 'Twelve Person12', 'isPerson13 Person13 Thirteen'],
-        'Alternative_name_2': [np.nan, np.nan, 'Person4 M. Four', np.nan, np.nan, 'Person7 M.I. Seven', np.nan, 'Person 9 isperson9 Nine-IsNine', np.nan, 'Person11 isPérson11 Eleven', np.nan, 'i.P. Thirteen'],
-        'Alternative_name_3': [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan],
-        'Maiden_name':[np.nan, np.nan, np.nan, 'Alive', np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+        'Registration_surname': ['One Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine IsNine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen-IsFourteen'],
+        'Registration_first_name': ['Person12', 'Person3', 'Person4', 'Person5', 'Person6 M.', 'Person7', 'Person8', 'Person9 isperson9',  'Person10', 'Person11 isPerson11', 'Person12', 'Person13', 'Person14-isPerson14'],
+        'Alternative_name_1': ['Person12 A. T. C. One', np.nan, 'Person4 M.I. Four', np.nan, 'Person6 Middle Six', 'P.M. Seven', 'Person8', 'Person9-isperson9 N. IsNine', 'Person10 isPerson10 Tén', 'P. isPerson11', 'Twelve Person12', 'isPerson13 Person13 Thirteen', 'Person14 isPerson14 Fourteen IsFourteen'],
+        'Alternative_name_2': [np.nan, np.nan, 'Person4 M. Four', np.nan, np.nan, 'Person7 M.I. Seven', np.nan, 'Person9 isperson9 Nine-IsNine', np.nan, 'Person11 isPérson11 Eleven', np.nan, 'i.P. Thirteen', np.nan],
+        'Alternative_name_3': [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan],
+        'Maiden_name':[np.nan, np.nan, np.nan, 'Alive', np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
     }
     return pd.DataFrame(names_df)
 
@@ -232,11 +233,12 @@ def alt_name_output():
         'six, pm': [('six', 'person6 m'), ('six', 'person6 middle')],
         'seven, p': [('seven', 'person7'), ('seven', 'p m'), ('seven', 'person7 m i')],
         'eight, p': [('eight', 'person8'), ('person8',)],
-        'nine isnine, pi': [('nine is nine', 'person9 isperson9'), ('isnine',  'person9-isperson9 n'), ('nine-isnine', 'person9 isperson9')],
+        'nine isnine, pi': [('nine isnine', 'person9 isperson9'), ('isnine',  'person9-isperson9 n'), ('nine-isnine', 'person9 isperson9')],
         'ten, p': [('ten', 'person10'), ('tén', 'person10 isperson10')],
         'eleven, pi': [('eleven', 'person11 isperson11'), ('isperson11', 'p'), ('eleven', 'person11 ispérson11')],
         'twelve, p': [('twelve', 'person12'), ('person12', 'twelve')],
-        'thirteen, p': [('thirteen', 'person13'), ('thirteen', 'isperson13 person13'), ('thirteen', 'i p')]
+        'thirteen, p': [('thirteen', 'person13'), ('thirteen', 'isperson13 person13'), ('thirteen', 'i p')],
+        'fourteen-isfourteen, pi': [('fourteen-isfourteen', 'person14-isperson14'), ('fourteen isfourteen', 'person14 isperson14')]
     }
 
 
@@ -395,7 +397,14 @@ def conference_authors():
         'four, p': ['paper1', 'paper3', 'paper6'],
         'five, p': ['paper3', 'paper6', 'paper9'],
         'six, pm': [],
-        'seven, p': ['paper7']
+        'seven, p': ['paper7'],
+        'eight, p': [],
+        'nine isnine, pi': [],
+        'ten, p': [],
+        'eleven, pi': [],
+        'twelve, p': [],
+        'thirteen, p': ['paper3'],
+        'fourteen-isfourteen, pi': []
     }
 
 @pytest.fixture
@@ -436,7 +445,49 @@ def processed_alt_names():
         'seven pm': 'seven, p',
         'seven, person7 mi': 'seven, p',
         'seven, pmi': 'seven, p',
-        'seven pmi': 'seven, p'
+        'seven pmi': 'seven, p',
+        'person8': 'eight, p',
+        'eight, person8': 'eight, p',
+        'eight, p': 'eight, p',
+        'eight p': 'eight, p',
+        'nine isnine, person9 isperson9': 'nine isnine, pi',
+        'nine isnine, pi': 'nine isnine, pi',
+        'nine isn.pi': 'nine isnine, pi',
+        'isnine, person9-isperson9 n': 'nine isnine, pi',
+        'isnine, pin': 'nine isnine, pi',
+        'isnine pin': 'nine isnine, pi',
+        'nine-isnine, person9 isperson9': 'nine isnine, pi',
+        'nine-isnine, pi': 'nine isnine, pi',
+        'nine-isn.pi': 'nine isnine, pi',
+        'ten, person10': 'ten, p',
+        'ten, p': 'ten, p',
+        'ten p': 'ten, p',
+        'tén, person10 isperson10': 'ten, p',
+        'tén, pi': 'ten, p',
+        'tén pi': 'ten, p',
+        'eleven, person11 isperson11': 'eleven, pi',
+        'eleven, pi': 'eleven, pi',
+        'eleven pi': 'eleven, pi',
+        'isperson11, p': 'eleven, pi',
+        'isperson.p': 'eleven, pi',
+        'eleven, person11 ispérson11': 'eleven, pi',
+        'twelve, person12': 'twelve, p',
+        'twelve, p': 'twelve, p',
+        'twelve p': 'twelve, p',
+        'person12, twelve': 'twelve, p',
+        'person12, t': 'twelve, p',
+        'person12 t': 'twelve, p',
+        'thirteen, person13': 'thirteen, p',
+        'thirteen, p': 'thirteen, p',
+        'thirteen p': 'thirteen, p',
+        'thirteen, isperson13 person13': 'thirteen, p',
+        'thirteen, ip': 'thirteen, p',
+        'thirteen ip': 'thirteen, p',
+        'fourteen-isfourteen, person14-isperson14': 'fourteen-isfourteen, pi',
+        'fourteen-isfourteen, pi': 'fourteen-isfourteen, pi',
+        'fourteen.pi': 'fourteen-isfourteen, pi',
+        'fourteen isfourteen, person14 isperson14': 'fourteen-isfourteen, pi',
+        'fourteen isfourteen, pi': 'fourteen-isfourteen, pi',
     }
 
 
