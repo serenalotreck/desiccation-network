@@ -72,9 +72,10 @@ class RecommendationSystem():
             attendees, paper_dataset, alt_names)
         self.set_attendee_country_affils_list(attendees)
         self.all_possible_conf_names = list(alt_names.keys())
-        self.all_possible_conf_names.extend([name for name
-                        in self.conference_authors.keys() if name not in
-                        self.all_possible_conf_names])
+        self.all_possible_conf_names.extend([
+            name for name in self.conference_authors.keys()
+            if name not in self.all_possible_conf_names
+        ])
         self.outlier_reduction_params = outlier_reduction_params
         self.enrich_threshold = enrich_threshold
         self.prod_threshold = prod_threshold
@@ -105,17 +106,26 @@ class RecommendationSystem():
         """
         Set countries for all authors.
         """
-        self.author_affils_dict = utils.get_geographic_locations(self.paper_dataset)
+        self.author_affils_dict = utils.get_geographic_locations(
+            self.paper_dataset)
 
     def set_attendee_country_affils_list(self, attendees):
         """
         Set countries reported in registration by past attendees.
         """
-        country_conversions = {country.name: country.alpha_3 for country in pycountry.countries}
+        country_conversions = {
+            country.name: country.alpha_3
+            for country in pycountry.countries
+        }
         attendee_countries = attendees['Country']
-        attendee_countries = attendee_countries.replace({'The Netherlands': 'Netherlands', 'USA': 'United States'}) # Assumes these are the only problem children
-        self.attendee_affils_list = [country_conversions[count] for count in attendee_countries]
-    
+        attendee_countries = attendee_countries.replace({
+            'The Netherlands': 'Netherlands',
+            'USA': 'United States'
+        })  # Assumes these are the only problem children
+        self.attendee_affils_list = [
+            country_conversions[count] for count in attendee_countries
+        ]
+
     def set_author_papers(self):
         """
         Set author_papers attribute
@@ -179,7 +189,10 @@ class RecommendationSystem():
         for paper, topic in self.paper_to_topic.items():
             for author in self.paper_authors[paper]:
                 topics_to_authors[topic].append(author)
-        topics_to_authors = {k: list(set(v)) for k, v in topics_to_authors.items()}
+        topics_to_authors = {
+            k: list(set(v))
+            for k, v in topics_to_authors.items()
+        }
         self.topics_to_authors = topics_to_authors
 
     def set_geographic_locations(self):
@@ -219,10 +232,12 @@ class RecommendationSystem():
         edges = [(c[0], c[1], {
             'weight': w
         }) for c, w in co_author_joined_weights.items()]
-        nodes = [(ep, {'is_conference_attendee': 'yes'}) if ep in
-                self.all_possible_conf_names else (ep,
-                    {'is_conference_attendee': 'no'}) for edge in edges for ep
-                in edge[:2]]
+        nodes = [(ep, {
+            'is_conference_attendee': 'yes'
+        }) if ep in self.all_possible_conf_names else
+                 (ep, {
+                     'is_conference_attendee': 'no'
+                 }) for edge in edges for ep in edge[:2]]
 
         # Build full network
         co_author_graph = nx.Graph()
@@ -240,7 +255,7 @@ class RecommendationSystem():
                 columns=['num_papers']).sort_values(by='num_papers',
                                                     axis='index')
             idx_to_remove = round(paper_nums_df.shape[0] *
-                                                (1 - self.prod_threshold))
+                                  (1 - self.prod_threshold))
             rows_to_remove = paper_nums_df.iloc[:idx_to_remove, :]
             nodes_to_remove = rows_to_remove.index.tolist()
             _ = co_author_graph.remove_nodes_from(nodes_to_remove)
@@ -271,10 +286,12 @@ class RecommendationSystem():
         edges = [(e[0], e[1], {
             'weight': w
         }) for e, w in co_cite_joined_weights.items()]
-        nodes = [(ep, {'is_conference_attendee': 'yes'}) if ep in
-                self.all_possible_conf_names else (ep,
-                    {'is_conference_attendee': 'no'}) for edge in edges for ep
-                in edge[:2]]
+        nodes = [(ep, {
+            'is_conference_attendee': 'yes'
+        }) if ep in self.all_possible_conf_names else
+                 (ep, {
+                     'is_conference_attendee': 'no'
+                 }) for edge in edges for ep in edge[:2]]
 
         # Build full network
         co_citation_graph = nx.Graph()
@@ -291,8 +308,8 @@ class RecommendationSystem():
                 orient='index',
                 columns=['num_papers']).sort_values(by='num_papers',
                                                     axis='index')
-            idx_to_remove = round(paper_nums_df.shape[0] * (1 -
-                self.prod_threshold))
+            idx_to_remove = round(paper_nums_df.shape[0] *
+                                  (1 - self.prod_threshold))
             rows_to_remove = paper_nums_df.iloc[:idx_to_remove, :]
             nodes_to_remove = rows_to_remove.index.tolist()
             _ = co_citation_graph.remove_nodes_from(nodes_to_remove)
@@ -319,8 +336,8 @@ class RecommendationSystem():
         distances between each author and all clusters.
         """
         print('\nPerforming Louvain clustering on co-author network...')
-        self.co_author_partitions = list(louvain_partitions(self.co_author_net,
-                                                          seed=1234))
+        self.co_author_partitions = list(
+            louvain_partitions(self.co_author_net, seed=1234))
         co_author_tree = GenericTreeNode('co-author')
         co_author_tree.parse_children(self.co_author_partitions)
         co_author_tree.get_distances()
@@ -334,8 +351,8 @@ class RecommendationSystem():
         distances between each author and all clusters.
         """
         print('\nPerforming Louvain clustering on co-citation network...')
-        self.co_cite_partitions = list(louvain_partitions(self.co_cite_net,
-                                                        seed=1234))
+        self.co_cite_partitions = list(
+            louvain_partitions(self.co_cite_net, seed=1234))
         co_cite_tree = GenericTreeNode('co-author')
         co_cite_tree.parse_children(self.co_cite_partitions)
         co_cite_tree.get_distances()
@@ -356,9 +373,9 @@ class RecommendationSystem():
             new_topics = self.topic_model.reduce_outliers(
                 docs, topics, **self.outlier_reduction_params)
             self.topic_model.update_topics(docs,
-                                    topics=new_topics,
-                                    vectorizer_model=self.vec_model,
-                                    representation_model=self.rep_model)
+                                           topics=new_topics,
+                                           vectorizer_model=self.vec_model,
+                                           representation_model=self.rep_model)
         self.id_to_topic = {
             int(itop[0]): itop[1]
             for itop in self.topic_model.get_topic_info()['Name'].str.split(
@@ -367,8 +384,10 @@ class RecommendationSystem():
         doc_tops = self.topic_model.get_document_info(docs)
         doc_tops['UID'] = self.tm_doc_df.index
         paper_to_topic_df = doc_tops[['UID', 'Topic']]
-        self.paper_to_topic = {row.UID: row.Topic for idx, row in
-                paper_to_topic_df.iterrows()}
+        self.paper_to_topic = {
+            row.UID: row.Topic
+            for idx, row in paper_to_topic_df.iterrows()
+        }
         self.set_topics_to_authors()
 
     def calculate_community_enrichment(self):
@@ -392,21 +411,23 @@ class RecommendationSystem():
             clust_enrich = {}
             for clust, authors in clusters_to_authors.items():
                 num_conf = [
-                    auth for auth in authors
-                    if auth in self.all_possible_conf_names ## This double counts authors with two alternative names in one cluster
+                    auth for auth in authors if auth in self.
+                    all_possible_conf_names  ## This double counts authors with two alternative names in one cluster
                 ]
                 total_num = len(authors)
                 enrich_prop = len(num_conf) / total_num
                 clust_enrich[clust] = enrich_prop
             # Use threshold if requested
             if self.enrich_threshold is not None:
-                cutoff = np.percentile(list(clust_enrich.values()), self.enrich_threshold)
-                clust_enrich = {clust: (0.0 if enrich < cutoff else enrich) for clust, enrich in clust_enrich.items()}
-            
+                cutoff = np.percentile(list(clust_enrich.values()),
+                                       self.enrich_threshold)
+                clust_enrich = {
+                    clust: (0.0 if enrich < cutoff else enrich)
+                    for clust, enrich in clust_enrich.items()
+                }
+
             enrichments[clust_type] = clust_enrich
-        
-        
-        
+
         self.enriched_clusters = enrichments
 
     @staticmethod
@@ -429,8 +450,7 @@ class RecommendationSystem():
             if author in authors:
                 author_topics.append(topic)
         topic_scores = [
-            1 if top not in enriched_clusters else 0
-            for top in author_topics
+            1 if top not in enriched_clusters else 0 for top in author_topics
         ]
         # Some docs are dropped for being truly interdisciplinary and not having
         # a class, have to account for that here
@@ -439,9 +459,10 @@ class RecommendationSystem():
         else:
             mean_topic_score = mean(topic_scores)
             return mean_topic_score
-        
+
     @staticmethod
-    def calculate_mean_hier_score(author, cluster_distances, enriched_clusters):
+    def calculate_mean_hier_score(author, cluster_distances,
+                                  enriched_clusters):
         """
         Calculate mean distance score for a given author for a
         hierarcically-clustered network.
@@ -457,8 +478,9 @@ class RecommendationSystem():
         # Get absolute scores
         try:
             cluster_type_scores = [
-                cluster_distances[author][clust_id] for clust_id in enriched_clusters
-                ]
+                cluster_distances[author][clust_id]
+                for clust_id in enriched_clusters
+            ]
             # Currently, the closer you are, the lower your score.
             # We want to privilege being some optimal distance from the enriched
             # clusters, because too close and they'll likely already be in the
@@ -469,14 +491,16 @@ class RecommendationSystem():
             # maximally far away.
             penalty_threshold = np.percentile(cluster_type_scores, 25)
             close_side_distance = penalty_threshold - 0
-            far_side_distance = max(cluster_type_scores) - penalty_threshold ## May want to change this to the max possible rather than the max observed
+            far_side_distance = max(
+                cluster_type_scores
+            ) - penalty_threshold  ## May want to change this to the max possible rather than the max observed
             cluster_scores = []
             for sc in cluster_type_scores:
                 dist = penalty_threshold - sc
                 if dist < 0:
-                    normed = 1 - (abs(dist)/far_side_distance)
+                    normed = 1 - (abs(dist) / far_side_distance)
                 else:
-                    normed = 1 - (dist/close_side_distance)
+                    normed = 1 - (dist / close_side_distance)
                 cluster_scores.append(normed)
             mean_cluster_score = mean(cluster_scores)
             return mean_cluster_score
@@ -492,18 +516,26 @@ class RecommendationSystem():
 
         returns:
             geography_score, float: score between 0 and 1
+            count, int: 1 if generic score was used, 0 otherwise
         """
         # Split the conference affiliations by percentile
         country_counts = Counter(self.attendee_affils_list)
         split_50p = np.percentile(list(country_counts.values()), 50)
-        top_50p = [country for country, count in country_counts.items() if count >= split_50p]
-        bottom_50p = [country for country, count in country_counts.items() if count < split_50p]
-        gen_prob_score = utils.calculate_gen_prob_geo_score(self.author_affils_dict, top_50p, bottom_50p)
+        top_50p = [
+            country for country, count in country_counts.items()
+            if count >= split_50p
+        ]
+        bottom_50p = [
+            country for country, count in country_counts.items()
+            if count < split_50p
+        ]
+        gen_prob_score = utils.calculate_gen_prob_geo_score(
+            self.author_affils_dict, top_50p, bottom_50p)
 
         # Get author country
         try:
             affil = self.author_affils_dict[author]
-    
+
             # Calculate score
             if affil in top_50p:
                 geography_score = 0
@@ -511,12 +543,13 @@ class RecommendationSystem():
                 geography_score = 0.5
             else:
                 geography_score = 1
+            count = 0
 
         except KeyError:
             geography_score = gen_prob_score
-            print('Used general probability score for an author.')
+            count = 1
 
-        return geography_score
+        return geography_score, count
 
     def calculate_candidate_scores(self):
         """
@@ -536,40 +569,57 @@ class RecommendationSystem():
 
         all_scores = {}
         author_score_list = []
+        used_generic = 0
         for author in self.author_papers.keys():
             if author not in self.conference_authors.keys():
                 author_scores = {}
                 # Hierarchically-clustered network scores
                 for clust_type, cluster_distances in {
-                        #'directed_citation': self.cite_ids_to_authors,
                         'co_citation': self.co_cite_cluster_distances,
                         'co_author': self.co_author_cluster_distances
                 }.items():
-                    enriched_ids = [clust_id for clust_id, enrich in self.enriched_clusters[clust_type].items() if enrich > 0]
-                    author_scores[clust_type] = self.calculate_mean_hier_score(author, cluster_distances, enriched_ids)
+                    enriched_ids = [
+                        clust_id for clust_id, enrich in
+                        self.enriched_clusters[clust_type].items()
+                        if enrich > 0
+                    ]
+                    author_scores[clust_type] = self.calculate_mean_hier_score(
+                        author, cluster_distances, enriched_ids)
 
                 # Topic cluster scores
-                enriched_tops = [clust_id for clust_id, enrich in self.enriched_clusters['topic'].items() if enrich > 0]
-                mean_topic_score = self.calculate_topic_pa_score(author, self.topics_to_authors, enriched_tops)
-                if ('co_citation' in author_scores.keys()) and ('co_author' in author_scores.keys()):
+                enriched_tops = [
+                    clust_id for clust_id, enrich in
+                    self.enriched_clusters['topic'].items() if enrich > 0
+                ]
+                mean_topic_score = self.calculate_topic_pa_score(
+                    author, self.topics_to_authors, enriched_tops)
+                if ('co_citation'
+                        in author_scores.keys()) and ('co_author'
+                                                      in author_scores.keys()):
                     author_scores['topic'] = mean_topic_score
 
                 # Geography score
-                author_scores['geography'] = self.calculate_geography_score(author)
-                
+                author_scores[
+                    'geography'], count = self.calculate_geography_score(
+                        author)
+                used_generic += count
+
                 # Record individual scores
                 author_score_list.append(author_scores)
 
                 # Combine into composite score
                 if len(author_scores) > 0:
                     author_overall_score = mean(author_scores.values())
-                
+
                 # If the author is a previous attendee, wipe score to 0
                 if author in self.all_possible_conf_names:
                     author_overall_score = 0
-                
+
                 # Add to all scores
                 all_scores[author] = author_overall_score
+
+        print('Used the general geographic probability score for '
+              f'{used_generic} of {len(self.author_papers)} authors.')
 
         # Save all individual scores
         scorepath = f'{self.outpath}/{self.outprefix}_individual_component_scores.jsonl'
@@ -614,12 +664,15 @@ class RecommendationSystem():
         # Apply threshold
         sorted_scores = {
             k: v
-            for k, v in sorted(all_scores.items(), key=lambda item: item[1], reverse=True)
+            for k, v in sorted(
+                all_scores.items(), key=lambda item: item[1], reverse=True)
         }
         candidates = list(sorted_scores.keys())[:cutoff]
-        
+
         # Save all composite scores
-        score_df = pd.DataFrame.from_dict(sorted_scores, orient='index', columns=['composite_score'])
+        score_df = pd.DataFrame.from_dict(sorted_scores,
+                                          orient='index',
+                                          columns=['composite_score'])
         score_path = f'{self.outpath}/{self.outprefix}_composite_scores.csv'
         score_df.to_csv(score_path, index=True)
         print(f'Saved overall composite scores as {score_path}')
@@ -630,8 +683,9 @@ class RecommendationSystem():
             if node in candidates:
                 new_co_cite_attrs[node] = 'candidate'
         nx.set_node_attributes(self.co_cite_net, new_co_cite_attrs,
-        'is_conference_attendee')
-        nx.write_graphml(self.co_cite_net,
+                               'is_conference_attendee')
+        nx.write_graphml(
+            self.co_cite_net,
             f'{self.outpath}/{self.outprefix}_co_citation_network.graphml')
         print(
             f'Saved co-citation network as {self.outpath}/{self.outprefix}_co_citation_network.graphml'
@@ -642,8 +696,9 @@ class RecommendationSystem():
             if node in candidates:
                 new_co_auth_attrs[node] = 'candidate'
         nx.set_node_attributes(self.co_author_net, new_co_auth_attrs,
-        'is_conference_attendee')
-        nx.write_graphml(self.co_author_net,
+                               'is_conference_attendee')
+        nx.write_graphml(
+            self.co_author_net,
             f'{self.outpath}/{self.outprefix}_co_author_network.graphml')
         print(
             f'Saved co-author network as {self.outpath}/{self.outprefix}_co_author_network.graphml'

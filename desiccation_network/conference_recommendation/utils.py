@@ -42,9 +42,11 @@ def calculate_dyadic_citation_freqs(graph):
             system_pairs[(self_system, cit_type)] += 1
 
     # Calculate dyadic freqs
-    dyadic_freqs = {sys_pair: num/system_totals[sys_pair[0]]  if system_totals[sys_pair[0]] != 0 else
-            np.nan for sys_pair, num
-            in system_pairs.items()}
+    dyadic_freqs = {
+        sys_pair: num / system_totals[sys_pair[0]]
+        if system_totals[sys_pair[0]] != 0 else np.nan
+        for sys_pair, num in system_pairs.items()
+    }
 
     return dyadic_freqs
 
@@ -87,8 +89,10 @@ def map_classes_to_jsonl(graph, jsonl, flatten, keyname):
     if flatten:
         jsonl = flatten_jsonl(jsonl)
 
-    study_by_uid = {uid: attrs['study_system'] for uid, attrs in
-            graph.nodes(data=True)}
+    study_by_uid = {
+        uid: attrs['study_system']
+        for uid, attrs in graph.nodes(data=True)
+    }
 
     updated_jsonl = []
     for paper in jsonl:
@@ -102,8 +106,11 @@ def map_classes_to_jsonl(graph, jsonl, flatten, keyname):
     return updated_jsonl
 
 
-def prune_citation_network(graph, main_results_only=None,
-        remove_dead_ends=False, threshold_in_degree=None, remove_noclass=False):
+def prune_citation_network(graph,
+                           main_results_only=None,
+                           remove_dead_ends=False,
+                           threshold_in_degree=None,
+                           remove_noclass=False):
     """
     Prune a citation network according to some criteria. Options:
         main_results_only: only keep nodes and links that are among the main
@@ -128,17 +135,23 @@ def prune_citation_network(graph, main_results_only=None,
         graph, MultiDiGraph: pruned graph
     """
     if main_results_only is not None:
-        to_remove = [node for node in graph.nodes if node not in
-                main_results_only]
+        to_remove = [
+            node for node in graph.nodes if node not in main_results_only
+        ]
     elif remove_dead_ends:
-        to_remove = [node for node in graph.nodes if graph.out_degree(node) ==
-                0]
+        to_remove = [
+            node for node in graph.nodes if graph.out_degree(node) == 0
+        ]
     elif threshold_in_degree is not None:
-        to_remove = [node for node in graph.nodes if graph.in_degree(node) <
-                threshold_in_degree]
+        to_remove = [
+            node for node in graph.nodes
+            if graph.in_degree(node) < threshold_in_degree
+        ]
     elif remove_noclass:
-        to_remove = [node for node, attrs in graph.nodes(data=True) if
-                attrs['study_system'] == 'NOCLASS']
+        to_remove = [
+            node for node, attrs in graph.nodes(data=True)
+            if attrs['study_system'] == 'NOCLASS'
+        ]
 
     _ = graph.remove_nodes_from(to_remove)
     return graph
@@ -220,7 +233,8 @@ def filter_papers(papers, key_df, kind, stringency='most'):
         key_rels = key_df.loc[keys, :]
         # Filter based on requested stringency
         if stringency == 'most':
-            if (len(key_rels['relevant'].unique()) == 1) and (key_rels['relevant'].unique()[0] == 'Y'):
+            if (len(key_rels['relevant'].unique())
+                    == 1) and (key_rels['relevant'].unique()[0] == 'Y'):
                 filtered_papers.append(paper)
         elif stringency == 'middle':
             nums = Counter(key_rels['relevant'].values.tolist())
@@ -255,35 +269,47 @@ def process_alt_names(alt_names):
     for row in alt_names.iterrows():
         row = row[1]
         # Account for possible first name hyphenation when getting the key name
-        reg_first_name = [i for part in row.Registration_first_name.split() for i in part.split('-')]
+        reg_first_name = [
+            i for part in row.Registration_first_name.split()
+            for i in part.split('-')
+        ]
         key = f'{row.Registration_surname.lower()}, {"".join([n[0] for n in reg_first_name]).lower()}'
         names = []
         # Add registration name
-        names.append((row.Registration_surname.lower(), row.Registration_first_name.lower().strip('.')))
+        names.append((row.Registration_surname.lower(),
+                      row.Registration_first_name.lower().strip('.')))
         # Get alternative names with same surname
         for name in row.tolist()[2:-1]:
             if not isinstance(name, str):
                 continue
             split_name = name.split(' ')
             # If the name is a simple firstname/lastname swap, skip other steps
-            if split_name == [row.Registration_surname, row.Registration_first_name]:
+            if split_name == [
+                    row.Registration_surname, row.Registration_first_name
+            ]:
                 names.append((split_name[1].lower(), split_name[0].lower()))
                 continue
             # If the publication name is just a first name, skip other steps
             if len(split_name) == 1:
-                names.append((split_name[0].lower(),))
+                names.append((split_name[0].lower(), ))
                 continue
             # Remove surname to get first name
             surname = row.Registration_surname.split(' ')
             surname = [part for name in surname for part in name.split('-')]
-            first_name = [i for i in split_name if unidecode(i) not in [unidecode(p) for p in surname]]
+            first_name = [
+                i for i in split_name
+                if unidecode(i) not in [unidecode(p) for p in surname]
+            ]
             # If nothing was removed, check for the second first name having become surname
             if len(first_name) == len(split_name):
                 # Assumes the final name in list is the surname
                 first_name = first_name[:-1]
             # Adjust surname if one part is missing in alt name (edge case that exists in our data)
             alt_surname = [i for i in split_name if i not in first_name]
-            first_name = [' '.join([i.strip() for i in nm.split('.')]).strip() for nm in first_name]
+            first_name = [
+                ' '.join([i.strip() for i in nm.split('.')]).strip()
+                for nm in first_name
+            ]
             full_name = (' '.join(alt_surname).lower(),
                          ' '.join(first_name).lower())
             names.append(full_name)
@@ -315,10 +341,10 @@ def find_author_papers(attendees, dataset, alt_names):
     # Process attendees to lowercase
     # for col in attendees.columns:
     #         attendees[col] = attendees[col].str.strip().str.lower()
-    
+
     ## TODO implement the ability to use the attendees df instead of alt names,
     ## for cases where alt names can't be curated manually
-    
+
     # Make dictionary where keys are all possible names in all possible WOS
     # formats, and values are their wos standard registration name. This
     # automatically includes maiden names.
@@ -336,10 +362,13 @@ def find_author_papers(attendees, dataset, alt_names):
             # lands you with only one letter, it's an initial, and otherwise
             # it's a full first name
             first_name_parts = [n.strip('.') for n in alt_n[1].split()]
-            first_single_letter = [i for i, n in enumerate(first_name_parts) if len(n) == 1]
-            if len(first_single_letter) >= 1: ## Assumes they're sequential
+            first_single_letter = [
+                i for i, n in enumerate(first_name_parts) if len(n) == 1
+            ]
+            if len(first_single_letter) >= 1:  ## Assumes they're sequential
                 initials = ''.join(first_name_parts[first_single_letter[0]:])
-                first_full_name_parts = first_name_parts[:first_single_letter[0]]
+                first_full_name_parts = first_name_parts[:first_single_letter[
+                    0]]
                 if first_full_name_parts == []:
                     first_name = initials
                 else:
@@ -356,7 +385,8 @@ def find_author_papers(attendees, dataset, alt_names):
             if len(alt_n) == 1:
                 continue
             last_name = alt_n[0]
-            initials = ''.join([n[0] for name in alt_n[1].split() for n in name.split('-')])
+            initials = ''.join(
+                [n[0] for name in alt_n[1].split() for n in name.split('-')])
             initial_name = last_name + ', ' + initials
             auth_initial_names.append(initial_name)
         # 1964-75
@@ -369,7 +399,9 @@ def find_author_papers(attendees, dataset, alt_names):
             # and last name are separated with a dot
             if len(alt_n[0]) > 8:
                 last_name = alt_n[0][:8]
-                initials = ''.join([n[0] for name in alt_n[1].split() for n in name.split('-')][:3])
+                initials = ''.join([
+                    n[0] for name in alt_n[1].split() for n in name.split('-')
+                ][:3])
                 dot_name = last_name + '.' + initials
                 auth_11_char_names.append(dot_name)
             # If it's less than 8 characters, we can include more first initials
@@ -377,14 +409,16 @@ def find_author_papers(attendees, dataset, alt_names):
             else:
                 remaining_chars = 11 - len(alt_n[0])
                 last_name = alt_n[0]
-                initials = ''.join([n[0] for name in alt_n[1].split() for n in name.split('-')][:remaining_chars])
+                initials = ''.join([
+                    n[0] for name in alt_n[1].split() for n in name.split('-')
+                ][:remaining_chars])
                 space_name = ' '.join([last_name, initials])
                 auth_11_char_names.append(space_name)
         # Combine and add to dict
         all_names = auth_full_names + auth_initial_names + auth_11_char_names
         for alt_n in all_names:
             name_map[alt_n] = conf_author
-    
+
     # Check all paper authors against our list
     conference_authors = defaultdict(list)
     for paper in dataset:
@@ -405,10 +439,13 @@ def find_author_papers(attendees, dataset, alt_names):
                 continue
 
     # Add back any authors that didn't have papers
-    missing_auths = [auth for auth in set(name_map.values()) if auth not in conference_authors.keys()]
+    missing_auths = [
+        auth for auth in set(name_map.values())
+        if auth not in conference_authors.keys()
+    ]
     for auth in missing_auths:
         conference_authors[auth] = []
-    
+
     return conference_authors, name_map
 
 
@@ -426,36 +463,41 @@ def get_iso_alpha(country):
         iso_name, str: three-letter country code
     """
     # Get all mappings
-    country_conversions = {country.name: country.alpha_3 for country in pycountry.countries}
-    wos_missed_dict = {'USA': 'USA',
-             'Peoples R China': 'CHN',
-             'England': 'GBR',
-             'South Korea': 'KOR',
-             'Russia': 'RUS',
-             'Czech Republic': 'CZE',
-             'Iran': 'IRN',
-             'Taiwan': 'TWN',
-             'Turkey': 'TUR',
-             'Scotland': 'GBR',
-             'Wales': 'GBR',
-             'U Arab Emirates': 'ARE',
-             'Vietnam': 'VNM',
-             'North Ireland': 'GBR',
-             'Dominican Rep': 'DOM',
-             'Cote Ivoire': 'CIV',
-             'Brunei': 'BRN',
-             'Dem Rep Congo': 'COD',
-             'Syria': 'SYR',
-             'Kosovo': 'XKX', # Note: Kosovo is not listed as an ISO standard country. The unofficial 2 and 3-digit codes are used by the European Commission and others until Kosovo is assigned an ISO code.(from https://knowledgecenter.zuora.com/Quick_References/Country%2C_State%2C_and_Province_Codes/A_Country_Names_and_Their_ISO_Codes)
-             'BELARUS': 'BLR',
-             'Venezuela': 'VEN',
-             'Bolivia': 'BOL',
-             'North Korea': 'PRK',
-             'Palestine': 'PSE',
-             'Laos': 'LAO',
-             'Papua N Guinea': 'PNG',
-             'Usa': 'USA',
-             'Fed Rep Ger': 'DEU' # For older affiliations from West Germany
+    country_conversions = {
+        country.name: country.alpha_3
+        for country in pycountry.countries
+    }
+    wos_missed_dict = {
+        'USA': 'USA',
+        'Peoples R China': 'CHN',
+        'England': 'GBR',
+        'South Korea': 'KOR',
+        'Russia': 'RUS',
+        'Czech Republic': 'CZE',
+        'Iran': 'IRN',
+        'Taiwan': 'TWN',
+        'Turkey': 'TUR',
+        'Scotland': 'GBR',
+        'Wales': 'GBR',
+        'U Arab Emirates': 'ARE',
+        'Vietnam': 'VNM',
+        'North Ireland': 'GBR',
+        'Dominican Rep': 'DOM',
+        'Cote Ivoire': 'CIV',
+        'Brunei': 'BRN',
+        'Dem Rep Congo': 'COD',
+        'Syria': 'SYR',
+        'Kosovo':
+        'XKX',  # Note: Kosovo is not listed as an ISO standard country. The unofficial 2 and 3-digit codes are used by the European Commission and others until Kosovo is assigned an ISO code.(from https://knowledgecenter.zuora.com/Quick_References/Country%2C_State%2C_and_Province_Codes/A_Country_Names_and_Their_ISO_Codes)
+        'BELARUS': 'BLR',
+        'Venezuela': 'VEN',
+        'Bolivia': 'BOL',
+        'North Korea': 'PRK',
+        'Palestine': 'PSE',
+        'Laos': 'LAO',
+        'Papua N Guinea': 'PNG',
+        'Usa': 'USA',
+        'Fed Rep Ger': 'DEU'  # For older affiliations from West Germany
     }
 
     # Map country and return
@@ -467,7 +509,9 @@ def get_iso_alpha(country):
             iso_name = wos_missed_dict[country.title()]
             return iso_name
         except KeyError:
-            print(f'No three-letter code found for country {country}, returning None')
+            print(
+                f'No three-letter code found for country {country}, returning None'
+            )
             return
 
 
@@ -486,8 +530,9 @@ def get_geographic_locations(dataset):
     papers_with_years = [paper for paper in dataset if 'year' in paper.keys()]
 
     # Sort papers by year
-    papers_chron_order_rev = sorted(dataset, key=lambda x: x['year'],
-                                reverse=True)
+    papers_chron_order_rev = sorted(dataset,
+                                    key=lambda x: x['year'],
+                                    reverse=True)
 
     # Get most recent affiliations
     author_affils = {}
@@ -502,27 +547,38 @@ def get_geographic_locations(dataset):
                 else:
                     try:
                         # Check for specific affiliation
-                        country = addrs[author['addr_no']]['country']
+                        # Start by checking if the person has multiple
+                        # affiliations
+                        mult_addrs = [int(i) for i in author['addr_no'].split(' ')]
+                        # If there are multiples, take the first one, otherwise
+                        # take what there is
+                        country = addrs[str(mult_addrs[0])]['country']
                         country_iso = get_iso_alpha(country)
                         if country_iso is not None:
-                            author_affils[author['wos_standard'].lower()] = country_iso
-                    except KeyError:
+                            author_affils[
+                                author['wos_standard'].lower()] = country_iso
+                    except KeyError as e:
                         # Check if all affiliations are in the same country if no specific affiliation
-                        countries = [addr['country'] for addr in paper['addresses']]
+                        countries = [
+                            addr['country'] for addr in paper['addresses']
+                        ]
                         if len(set(countries)) == 1:
                             country = countries[0]
                             country_iso = get_iso_alpha(country)
                             if country_iso is not None:
-                                author_affils[author['wos_standard'].lower()] = country_iso
+                                author_affils[author['wos_standard'].lower(
+                                )] = country_iso
                         else:
                             continue
             except KeyError:
                 continue
 
-    print(f'There are {len(author_affils)} author-country pairs, and {len(set(all_authors))} total authors.')
+    print(
+        f'There are {len(author_affils)} author-country pairs, and {len(set(all_authors))} total authors.'
+    )
 
     return author_affils
-                
+
 
 def calculate_gen_prob_geo_score(author_affils_dict, top_50p, bottom_50p):
     """
@@ -539,17 +595,23 @@ def calculate_gen_prob_geo_score(author_affils_dict, top_50p, bottom_50p):
         gen_prob_score, float: single number general probability score
     """
     # Get overall counts and convert to weights
-    country_counts = pd.DataFrame.from_dict(Counter(author_affils_dict.values()), orient='index', columns=['count'])
-    country_counts['weight'] = country_counts['count']/country_counts['count'].sum()
+    country_counts = pd.DataFrame.from_dict(Counter(
+        author_affils_dict.values()),
+                                            orient='index',
+                                            columns=['count'])
+    country_counts[
+        'weight'] = country_counts['count'] / country_counts['count'].sum()
 
     # Get overall probability of belonging to an attendee country
     all_attendee_countries = top_50p + bottom_50p
-    attendee_countries_total_weight = country_counts[country_counts.index.isin(all_attendee_countries)]['weight'].sum()
+    attendee_countries_total_weight = country_counts[country_counts.index.isin(
+        all_attendee_countries)]['weight'].sum()
 
     # Get the probability of an attendee country being a low representation country
-    low_rep_prob = len(bottom_50p)/len(all_attendee_countries)
-    
+    low_rep_prob = len(bottom_50p) / len(all_attendee_countries)
+
     # Make the calculation
-    gen_prob_score = (1 - attendee_countries_total_weight) + (attendee_countries_total_weight*(low_rep_prob*0.5))
-    
+    gen_prob_score = (1 - attendee_countries_total_weight) + (
+        attendee_countries_total_weight * (low_rep_prob * 0.5))
+
     return gen_prob_score
