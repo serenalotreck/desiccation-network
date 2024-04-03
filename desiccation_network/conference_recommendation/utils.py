@@ -11,12 +11,14 @@ import pandas as pd
 from unidecode import unidecode
 
 
-def calculate_dyadic_citation_freqs(graph):
+def calculate_dyadic_citation_freqs(graph, attribute):
     """
     Calculate dyadic citation frequencies for a given network.
 
     parameters:
         graph, MultiDiGraph: citation network with classifications
+        attribute, str: name of the attribute for which to calculate the
+            frequencies
 
     returns:
         dyadic_freqs, dict: keys are ordered pairs of study_system names, values are
@@ -24,7 +26,7 @@ def calculate_dyadic_citation_freqs(graph):
             second
     """
     # Get the available study systems
-    systems = {attrs['study_system'] for node, attrs in graph.nodes(data=True)}
+    systems = {attrs[attribute] for node, attrs in graph.nodes(data=True)}
 
     # Get all ordered pairs and set up for data collection
     system_pairs = {p: 0 for p in product(systems, repeat=2)}
@@ -33,12 +35,12 @@ def calculate_dyadic_citation_freqs(graph):
     # For all nodes, add to both dicts
     for node, attrs in graph.nodes(data=True):
         # Get the system of this paper
-        self_system = attrs['study_system']
+        self_system = attrs[attribute]
         # Get the total number of citations for this node
         system_totals[self_system] += graph.out_degree(node)
         # Go through citations specifically and get their systems
         for cited_paper in graph.neighbors(node):
-            cit_type = graph.nodes[cited_paper]['study_system']
+            cit_type = graph.nodes[cited_paper][attribute]
             system_pairs[(self_system, cit_type)] += 1
 
     # Calculate dyadic freqs

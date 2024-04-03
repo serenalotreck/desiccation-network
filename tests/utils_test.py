@@ -91,7 +91,7 @@ def dyadic_output():
 
 def test_calculate_dyadic_citation_freqs(input_graph, dyadic_output):
 
-    result = utils.calculate_dyadic_citation_freqs(input_graph)
+    result = utils.calculate_dyadic_citation_freqs(input_graph, 'study_system')
 
     assert result == dyadic_output
 
