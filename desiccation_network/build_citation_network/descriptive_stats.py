@@ -9,6 +9,7 @@ from os.path import abspath
 import jsonlines
 import networkx as nx
 import matplotlib.pyplot as plt
+plt.rcParams['pdf.fonttype'] = 42
 from collections import Counter, defaultdict
 
 
@@ -72,8 +73,8 @@ def per_class_cumulative(years_per_class, search_term, out_loc, out_prefix):
         f'Cumulative publications over time for search term "{search_term}"')
     plt.ylabel('Total publications (thousands)')
     plt.xlabel('Year')
-    savepath = f'{out_loc}/{out_prefix}_per_class_cumulative_plot.png'
-    plt.savefig(savepath, format='png', dpi=600, bbox_inches='tight')
+    savepath = f'{out_loc}/{out_prefix}_per_class_cumulative_plot.pdf'
+    plt.savefig(savepath, format='pdf', dpi=600, bbox_inches='tight')
     print(f'Saved per-class cumulative plot as {savepath}')
 
 
@@ -145,8 +146,8 @@ def per_class_histogram(flattened_papers, paper_classifications, search_term,
     )
     plt.xlabel('Publication Year')
     plt.ylabel('Count')
-    savepath = f'{out_loc}/{out_prefix}_histogram_per_class.png'
-    plt.savefig(savepath, format='png', dpi=600, bbox_inches='tight')
+    savepath = f'{out_loc}/{out_prefix}_histogram_per_class.pdf'
+    plt.savefig(savepath, format='pdf', dpi=600, bbox_inches='tight')
     print(f'Saved per-class histogram as {savepath}')
 
     return years_per_class
@@ -194,8 +195,8 @@ def overall_cumulative(paper_years, search_term, out_loc, out_prefix):
         f'Cumulative publications over time for search term "{search_term}"')
     plt.ylabel('Total publications (thousands)')
     plt.xlabel('Year')
-    savepath = f'{out_loc}/{out_prefix}_overall_cumulative_pubs.png'
-    plt.savefig(savepath, format='png', dpi=600, bbox_inches='tight')
+    savepath = f'{out_loc}/{out_prefix}_overall_cumulative_pubs.pdf'
+    plt.savefig(savepath, format='pdf', dpi=600, bbox_inches='tight')
     print(f'Saved cumulative plot as {savepath}')
 
 
@@ -247,8 +248,8 @@ def overall_histogram(flattened_papers, search_term, out_loc, out_prefix):
     plt.title(f'New publications per year for search term "{search_term}"')
     plt.xlabel('Publication Year')
     plt.ylabel('Count')
-    savepath = f'{out_loc}/{out_prefix}_overall_pub_histogram.png'
-    plt.savefig(savepath, format='png', dpi=600, bbox_inches='tight')
+    savepath = f'{out_loc}/{out_prefix}_overall_pub_histogram.pdf'
+    plt.savefig(savepath, format='pdf', dpi=600, bbox_inches='tight')
     print(f'Saved histogram as {savepath}')
 
     return paper_years
