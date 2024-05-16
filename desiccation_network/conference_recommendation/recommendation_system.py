@@ -15,6 +15,7 @@ from statistics import mean
 from generic_tree_node import GenericTreeNode
 import jsonlines
 import pycountry
+import json
 
 
 class RecommendationSystem():
