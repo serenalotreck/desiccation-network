@@ -91,5 +91,51 @@ python descriptive_stats.py metadata_results_output.jsonl classified_citation_ne
 There are many options for downstream analysis of the resulting citation network -- the code to generate the analysis we performed in this project can be found in `notebooks` for inspiration!
 
 ## Conference recommendation algorithm
-The code in `desiccation_network/conference_recommendation` allows the prediction of new scientists to attend a given conference. Given the correct data pre-processing, this algorithm could be used for any conference.
-TODO: finish documentation for this section
+The code in `desiccation_network/conference_recommendation` allows the prediction of new attendees for a given conference. Given the correct data pre-processing, this algorithm could be used for any conference.
+
+The two principal scripts for conference recommendations are `get_recommendations.py`, which performs the prediction, and `describe_candidates.py`, which creates a csv file of all publications for each of the candidate authors that was used in determining potential attendees.
+
+The required inputs to `get_recommendations.py` are:
+* `jsonl_path`: the path to the jsonl-formatted dataset of papers originally drawn from the WOS XML dataset.
+* `graphml_path`: the path to the classified citation network that was constructed from the file specified by `jsonl_path` using `classify_papers.py`
+* `topic_model_config`: the path to a json file specifying the configurations for BERTopic component models. Two example topic model configuration files can be found in `conference_recommendation/topic_model_configs`. Explanations of the parameters can be found in the documentation for [BERTopic](https://maartengr.github.io/BERTopic/index.html).
+* `attendee_path`: the path to a csv file containing the names of past conference attendees. The file must have the following columns:
+
+| Surname | First_name | Affiliation | Country |
+| -------- | ------- | -------- | ------- |
+
+* `alt_name_path`: the path to a csv file containing alternative publishing names for conference authors, containing the following columns:
+
+| Registration_surname | Registration_first_name | Alternative_name_1 | Alternative_name_2 | Alternative_name_3 | Maiden_name |
+| -------- | ------- | -------- | ------- | -------- | ------- |
+
+`Alternative_name_<x>`  and `Maiden_name` are all in Firstname Lastname order. An example entry for someone that occationally publishes with a middle initial would be:
+
+| Registration_surname | Registration_first_name | Alternative_name_1 | Alternative_name_2 | Alternative_name_3 | Maiden_name |
+| -------- | ------- | -------- | ------- | -------- | ------- |
+| Lotreck | Serena | Serena G. Lotreck |  |  |  |
+
+For our use case, we manually searched each author and looked for a Google Scholar or Semantic Scholar author page containing their publications, and looked through them to find potential alternative names. While this parameter is required, you can simply leave all `Alternative_name_<x>` columns blank in order to perform recommendation without consideration of alternative names.
+* `-cutoff` (optional):  an integer specifying how many candidates to return. Default value is 5 candidates.
+* `-enrich_threshold` (optional): an integer between 0 and 100. Used in consideration of what network clusters should be considered "enriched" in previous conference attendees by using the provided value to make a cut in the distribution of enrichment values.
+* `-prod_threshold` (optional): a float between 0 and 1. Used to create a threshold based on productivity, in terms of how many publications each author has. For example, a productivity threshold of 0.4 will take the 40% most productive authors by publication number.
+* `--save_clusters` (optional flag): whether or not to save the cluster information used to make attendee recommendations
+* `outpath`: path to a directory to save the outputs
+* `outprefix`: string to prepend to output file names.
+
+
+An example of how to run this script:
+  ```
+  python get_recommendations.py /path/to/dataset.jsonl /path/to/classified_network.graphml topic_model_configs/mmr_topic_config.json /path/to/attendees.csv /path/to/alt_names.csv /output/path/ output_prefix -cutoff 10 -prod_threshold 0.03 -enrich_threshold 50 --save_clusters
+  ```
+
+Once you've run `get_recommendations.py`, you can pass the output to `describe_candidates.py` like this. If you've provided the output prefix of "my_recs" with a `cutoff` value of 10, the relevant output file would be called `my_recs_top_10_candidates.txt`:
+
+```
+python describe_candidates.py my_recs_top_10_candidates.txt /path/to/dataset.jsonl /output/path/ output_prefix
+```
+This will return a CSV with the articles from the dataset pertaining to each candidate, with the following columns:
+
+| publication_title | publication_abstract | publication_year | candidate | affiliation_at_pub|
+| -------- | ------- | -------- | ------- | -------- |
+
