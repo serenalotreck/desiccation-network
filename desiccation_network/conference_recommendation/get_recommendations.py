@@ -19,6 +19,7 @@ from bertopic import BERTopic
 from bertopic.representation import MaximalMarginalRelevance, KeyBERTInspired, PartOfSpeech, OpenAI
 import pandas as pd
 from recommendation_system import RecommendationSystem
+import pickle ##TODO remove
 
 
 def build_topic_model(topic_model_config):
@@ -68,9 +69,18 @@ def main(paper_dataset, classed_cite_net, topic_model_config, attendees,
                                      outlier_reduction_params,
                                      enrich_threshold, prod_threshold,
                                      save_clusters, outpath, outprefix)
+    ## TODO remove
+    with open(f'{outpath}/{outprefix}_pre_run_object.pk', 'ab') as f:
+        pickle.dump(rec_model, f)
+    print('Saved initial pickle.')
 
     # Get recommendations
     recs = rec_model.get_conference_candidates(cutoff)
+
+    ## TODO remove
+    with open(f'{outpath}/{outprefix}_post_run_object.pk', 'ab') as f:
+        pickle.dump(rec_model, f)
+    print('Saved final pickle.')
 
     # Save
     print('\nSaving output candidates...')

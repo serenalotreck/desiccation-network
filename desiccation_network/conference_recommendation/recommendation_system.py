@@ -366,11 +366,12 @@ class RecommendationSystem():
         Fit topic model and set topic cluster IDs, save plot with topic rep
         study system distributions.
         """
-        print('\nFitting topic model...')
         self.set_tm_doc_df()
         docs = self.tm_doc_df.abstract.values.tolist()
+        print('\nFitting topic model...')
         topics, probs = self.topic_model.fit_transform(docs)
         if self.outlier_reduction_params is not None:
+            print('\nReducing outliers...')
             new_topics = self.topic_model.reduce_outliers(
                 docs, topics, **self.outlier_reduction_params)
             self.topic_model.update_topics(docs,
@@ -405,7 +406,7 @@ class RecommendationSystem():
             if self.save_clusters:
                 savename = f'{self.outpath}/{self.outprefix}_{clust_type}_clusters_to_authors.json'
                 with open(savename, 'w') as myf:
-                    json.dump(clusters_to_authors, savename)
+                    json.dump(clusters_to_authors, myf)
                 print(
                     f'Saved {clust_type} clusters to authors dict as {savename}'
                 )
@@ -652,7 +653,6 @@ class RecommendationSystem():
         self.fit_topic_model()
 
         # Perform other clustering
-        ##TODO self.cluster_citation_network()
         self.cluster_co_citation_network()
         self.cluster_co_author_network()
 
